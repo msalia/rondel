@@ -39,7 +39,8 @@ scripts/
   resolve-aliases.js   Post-build path alias resolver
 
 training/
-  train.py             YOLOv8-Pose training and TF.js export (ultralytics)
+  train.py             YOLOv8-Pose training (ultralytics)
+  export.py            Export trained checkpoint to TF.js format
   requirements.txt     Python dependencies
   setup_venv.sh        Virtual environment setup script
 
@@ -223,13 +224,20 @@ The 4 keypoints are the perspective-warped corners of the code (top-left, top-ri
 npm run train
 ```
 
-Sets up a Python virtual environment (if needed), installs dependencies, then trains a YOLOv8n-pose model on the synthetic dataset and auto-exports to TF.js format.
+Sets up a Python virtual environment (if needed), installs dependencies, trains a YOLOv8n-pose model on the synthetic dataset, then exports the best checkpoint to TF.js format.
 
-Options (passed after `--`):
+To re-export an existing checkpoint without retraining:
+
+```bash
+npm run export-model
+npm run export-model -- --checkpoint path/to/best.pt
+```
+
+Training options (passed after `--`):
 
 ```bash
 npm run train -- --epochs 40 --batch-size 32
-npm run train -- --dataset ./my_dataset --output ./my_model
+npm run train -- --dataset ./my_dataset
 npm run train -- --resume runs/pose/circular_code/weights/best.pt
 npm run train -- --base-model yolov8s-pose.pt  # larger model
 ```

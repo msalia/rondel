@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Train a YOLOv8-OBB circular code detector and export to TensorFlow.js.
+Train a YOLOv8 pose circular code detector.
 
 Usage:
     python training/train.py
     python training/train.py --epochs 50
-    python training/train.py --dataset ./dataset --output ./models/circular_code
     python training/train.py --resume runs/train/circular_code/weights/best.pt
 """
 
 import argparse
 import os
-import shutil
 import ssl
-import sys
-import types
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -45,9 +41,6 @@ IMAGE_SIZE = 320
 def main():
     parser = argparse.ArgumentParser(description="Train circular code detector")
     parser.add_argument("--dataset", default="./dataset", help="Dataset directory")
-    parser.add_argument(
-        "--output", default="./models/circular_code", help="TF.js model output"
-    )
     parser.add_argument("--epochs", type=int, default=EPOCHS)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument(
@@ -86,49 +79,7 @@ def main():
         exist_ok=True,
     )
 
-    candidates = [
-        os.path.join("runs", "pose", "runs", "train", "circular_code", "weights", "best.pt"),
-        os.path.join("runs", "pose", "circular_code", "weights", "best.pt"),
-        os.path.join("runs", "train", "circular_code", "weights", "best.pt"),
-    ]
-    best_pt = next((p for p in candidates if os.path.exists(p)), None)
-    if not best_pt:
-        print("Error: best.pt not found after training.")
-        return
-
-    print(f"\nBest model: {best_pt}")
-    print("Exporting to TensorFlow SavedModel + TF.js...")
-
-    best_model = YOLO(best_pt)
-    best_model.export(format="saved_model", imgsz=IMAGE_SIZE)
-
-    saved_model_dir = os.path.join(os.path.dirname(best_pt), "best_saved_model")
-    tfjs_dir = os.path.join(os.path.dirname(best_pt), "best_web_model")
-
-    # Block tensorflow_decision_forests to avoid protobuf version conflict
-    sys.modules["tensorflow_decision_forests"] = types.ModuleType("tensorflow_decision_forests")
-    from tensorflowjs.converters import converter
-
-    converter.convert([
-        "--input_format=tf_saved_model",
-        "--output_format=tfjs_graph_model",
-        "--signature_name=serving_default",
-        "--saved_model_tags=serve",
-        "--weight_shard_size_bytes=4194304",
-        saved_model_dir,
-        tfjs_dir,
-    ])
-
-    os.makedirs(args.output, exist_ok=True)
-    for f in os.listdir(tfjs_dir):
-        if f.endswith((".json", ".bin")):
-            src = os.path.join(tfjs_dir, f)
-            dst = os.path.join(args.output, f)
-            shutil.copy2(src, dst)
-            size = os.path.getsize(dst)
-            print(f"  {f} ({size:,} bytes)")
-
-    print(f"\nDone! TF.js model exported to {args.output}/")
+    print("\nTraining complete.")
 
 
 if __name__ == "__main__":
