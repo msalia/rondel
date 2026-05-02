@@ -15,7 +15,7 @@ const DEFAULT_PRIMARY = "#000000";
 const DEFAULT_SECONDARY = "#d0d0d0";
 const GAP_FRACTION = 0.3;
 const STROKE_WIDTH_RATIO = 0.5;
-const CENTER_RADIUS_RATIO = 0.7;
+const CENTER_RADIUS_RATIO = 0.75;
 const SECONDARY_SEPARATION = 1;
 
 /** Options for customizing SVG rendering of a circular code. */

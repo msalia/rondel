@@ -54,7 +54,7 @@ function checkCenterDot(
   rings: number,
   size: number,
 ): boolean {
-  const dotRadius = getRingWidth(rings, size) * 0.6;
+  const dotRadius = getRingWidth(rings, size) * 0.65;
   const sampleRadius = dotRadius * 0.5;
 
   let centerSum = 0;

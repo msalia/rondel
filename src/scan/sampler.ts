@@ -3,7 +3,6 @@ import type { ImageBuffer } from "@/types";
 import {
   getRingRadius,
   getRingWidth,
-  getSegmentAngle,
   getSegmentsForRing,
   isDataRing,
 } from "@/core/layout";
@@ -23,7 +22,7 @@ function pixelBrightness(
 }
 
 /** Samples bits from a rectified circular code image using polar coordinates.
- *  Uses multi-point sampling per segment and per-ring adaptive thresholding. */
+ *  Uses multi-point sampling per segment with per-ring adaptive thresholding. */
 export function samplePolarGrid(
   frame: ImageBuffer,
   cx: number,
@@ -41,6 +40,7 @@ export function samplePolarGrid(
   for (let r = 0; r < rings; r++) {
     if (!isDataRing(r)) continue;
     const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+    const segAngle = (2 * Math.PI) / segs;
     const centerRadius = getRingRadius(r, rings, codeSize);
     const innerRadius = centerRadius - ringWidth * 0.1;
     const outerRadius = centerRadius + ringWidth * 0.1;
@@ -48,17 +48,20 @@ export function samplePolarGrid(
     const ringBrightness: number[] = [];
 
     for (let segment = 0; segment < segs; segment++) {
-      const angle = getSegmentAngle(segment, segs) + orientationOffset;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
+      const segCenter = getSegmentAngle(segment, segs) + segAngle * 0.35 + orientationOffset;
 
       let sum = 0;
       let count = 0;
-      for (const sr of [innerRadius, centerRadius, outerRadius]) {
-        const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
-        if (b >= 0) {
-          sum += b;
-          count++;
+      for (const aOff of [-segAngle * 0.1, 0, segAngle * 0.1]) {
+        const angle = segCenter + aOff;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        for (const sr of [innerRadius, centerRadius, outerRadius]) {
+          const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
+          if (b >= 0) {
+            sum += b;
+            count++;
+          }
         }
       }
 
@@ -78,4 +81,8 @@ export function samplePolarGrid(
   }
 
   return bits;
+}
+
+function getSegmentAngle(segment: number, segmentsInRing: number): number {
+  return (segment / segmentsInRing) * Math.PI * 2;
 }

@@ -6,7 +6,7 @@ import { renderCanvas } from "@/render/canvasRenderer";
 import { getRingRadius, getSegmentsForRing, getSegmentAngle, isDataRing } from "@/core/layout";
 import { loadModel, isModelLoaded } from "@/ml/detector";
 import { scanFrame } from "@/scan";
-import { bufferToCanvas, captureFrameToBuffer } from "@/utils/image";
+import { bufferToCanvas, canvasToBuffer, captureFrameToBuffer } from "@/utils/image";
 import type { EncodedCode, ImageBuffer } from "@/types";
 
 let lastCode: EncodedCode | null = null;
@@ -111,12 +111,128 @@ function downloadPng() {
   });
 }
 
+const scanImageBtn = document.getElementById("scan-image-btn") as HTMLButtonElement;
+const scanImageResult = document.getElementById("scan-image-result") as HTMLDivElement;
+const scanImageDebug = document.getElementById("scan-image-debug") as HTMLDivElement;
+
+function scanFromImage() {
+  const svgEl = codeOutput.querySelector("svg");
+  if (!svgEl) return;
+
+  const rings = parseInt(optRings.value);
+  const segmentsPerRing = parseInt(optSegments.value);
+  const eccBytes = parseInt(optEcc.value);
+
+  const svgString = new XMLSerializer().serializeToString(svgEl);
+  const img = new Image();
+  const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+
+    const codeRenderSize = 200;
+    const captureSize = 320;
+    const pad = (captureSize - codeRenderSize) / 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = captureSize;
+    canvas.height = captureSize;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = inverted ? "#111" : "#fff";
+    ctx.fillRect(0, 0, captureSize, captureSize);
+    ctx.drawImage(img, pad, pad, codeRenderSize, codeRenderSize);
+
+    const captured = canvasToBuffer(canvas);
+    const knownDetection = {
+      cx: captureSize / 2,
+      cy: captureSize / 2,
+      r: codeRenderSize / (2 * 1.15),
+      confidence: 1,
+    };
+    const result = scanFrame(captured, { rings, segmentsPerRing, eccBytes, knownDetection });
+
+    displayScanImageResult(result, rings, segmentsPerRing);
+  };
+  img.src = url;
+}
+
+function displayScanImageResult(
+  result: ReturnType<typeof scanFrame>,
+  rings: number,
+  segmentsPerRing: number,
+) {
+  scanImageResult.style.display = "block";
+  scanImageDebug.style.display = "block";
+
+  if (result.decoded) {
+    scanImageResult.textContent = `Scanned: "${result.decoded}"`;
+    scanImageResult.className = "decode-result " + (result.decoded === textInput.value ? "success" : "error");
+  } else {
+    scanImageResult.textContent = `Scan failed: ${result.error || "unknown"}`;
+    scanImageResult.className = "decode-result error";
+  }
+
+  drawPipelineStep("gen-dbg-warp", result.warped);
+
+  const codeSize = result.rectified.width;
+  drawPipelineStep("gen-dbg-sample", result.rectified, (ctx, sz) => {
+    const s = sz / codeSize;
+    let bitIdx = 0;
+    for (let r = 0; r < rings; r++) {
+      if (!isDataRing(r)) continue;
+      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+      const radius = getRingRadius(r, rings, codeSize);
+      for (let seg = 0; seg < segs; seg++) {
+        const bit = result.bits[bitIdx++] ?? 0;
+        const a = getSegmentAngle(seg, segs);
+        ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
+        ctx.beginPath();
+        ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+
+  const resultCanvas = document.getElementById("gen-dbg-result") as HTMLCanvasElement;
+  const rCtx = resultCanvas.getContext("2d")!;
+  resultCanvas.width = 120;
+  resultCanvas.height = 120;
+  rCtx.fillStyle = "#111";
+  rCtx.fillRect(0, 0, 120, 120);
+  rCtx.font = "bold 12px monospace";
+  rCtx.textAlign = "center";
+  const ori = result.orientation;
+  const v = result.validation;
+  if (result.decoded) {
+    rCtx.fillStyle = "#00ff00";
+    rCtx.fillText("DECODED", 60, 30);
+    rCtx.font = "10px monospace";
+    rCtx.fillStyle = "#ccc";
+    const text = result.decoded.length > 14 ? result.decoded.slice(0, 14) + "..." : result.decoded;
+    rCtx.fillText(text, 60, 50);
+  } else {
+    rCtx.fillStyle = "#ff4444";
+    rCtx.fillText("FAILED", 60, 30);
+    rCtx.font = "9px monospace";
+    rCtx.fillStyle = "#888";
+    rCtx.fillText((result.error || "").slice(0, 18), 60, 50);
+  }
+  rCtx.font = "9px monospace";
+  rCtx.fillStyle = "#666";
+  rCtx.fillText(`dot:${v.centerDot ? "Y" : "n"} ring:${v.ringContrast ? "Y" : "n"} seg:${v.segmentPattern ? "Y" : "n"}`, 60, 70);
+  rCtx.fillText(`orient: ${((ori.angle * 180) / Math.PI).toFixed(0)} ${ori.reflected ? "REFL" : ""} ${ori.inverted ? "INV" : ""}`, 60, 85);
+  rCtx.fillText(`conf: ${(ori.confidence * 100).toFixed(0)}%`, 60, 100);
+  rCtx.fillText(`det: ${(result.detection.confidence * 100).toFixed(0)}%`, 60, 115);
+}
+
 generateBtn.addEventListener("click", generate);
 textInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") generate();
 });
 downloadSvgBtn.addEventListener("click", downloadSvg);
 downloadPngBtn.addEventListener("click", downloadPng);
+scanImageBtn.addEventListener("click", scanFromImage);
 
 // Scanner
 const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement;

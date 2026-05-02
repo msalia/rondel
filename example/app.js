@@ -75283,7 +75283,7 @@ return a / b;`;
   var DEFAULT_SECONDARY = "#d0d0d0";
   var GAP_FRACTION = 0.3;
   var STROKE_WIDTH_RATIO = 0.5;
-  var CENTER_RADIUS_RATIO = 0.7;
+  var CENTER_RADIUS_RATIO = 0.75;
   var SECONDARY_SEPARATION = 1;
   function renderSVG(code, opts = {}) {
     const normalized = typeof opts === "number" ? { size: opts } : opts;
@@ -75721,12 +75721,73 @@ return a / b;`;
     return { sharpness, contrast, overall };
   }
 
-  // src/scan/orientationAnalyzer.ts
-  function analyzeOrientation(buf, rings, size, numSamples = 360) {
+  // src/scan/centerRefine.ts
+  function refineCenterFromDot(buf, rings, size) {
     const { data, width, height } = buf;
     const gray = toGrayscale(data, width * height);
-    const cx = width / 2;
-    const cy = height / 2;
+    const expectedCx = width / 2;
+    const expectedCy = height / 2;
+    const ringWidth = getRingWidth(rings, size);
+    const dotRadius = ringWidth * 0.75;
+    const searchRadius = Math.ceil(ringWidth * 2);
+    let innerSum = 0, innerN = 0;
+    let outerSum = 0, outerN = 0;
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > searchRadius) continue;
+        const x2 = Math.round(expectedCx + dx);
+        const y = Math.round(expectedCy + dy);
+        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
+        const val = gray[y * width + x2];
+        if (dist <= dotRadius * 0.8) {
+          innerSum += val;
+          innerN++;
+        } else if (dist >= dotRadius * 1.3) {
+          outerSum += val;
+          outerN++;
+        }
+      }
+    }
+    if (innerN === 0 || outerN === 0) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    const innerAvg = innerSum / innerN;
+    const outerAvg = outerSum / outerN;
+    if (Math.abs(innerAvg - outerAvg) < 30) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    const dotIsDark = innerAvg < outerAvg;
+    const threshold3 = (innerAvg + outerAvg) / 2;
+    let sumX = 0, sumY = 0, weight = 0;
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        if (dx * dx + dy * dy > searchRadius * searchRadius) continue;
+        const x2 = Math.round(expectedCx + dx);
+        const y = Math.round(expectedCy + dy);
+        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
+        const val = gray[y * width + x2];
+        const isDot = dotIsDark ? val < threshold3 : val > threshold3;
+        if (isDot) {
+          const w = Math.abs(val - threshold3);
+          sumX += x2 * w;
+          sumY += y * w;
+          weight += w;
+        }
+      }
+    }
+    if (weight < 1) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    return { cx: sumX / weight, cy: sumY / weight };
+  }
+
+  // src/scan/orientationAnalyzer.ts
+  function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY) {
+    const { data, width, height } = buf;
+    const gray = toGrayscale(data, width * height);
+    const cx = centerX ?? width / 2;
+    const cy = centerY ?? height / 2;
     const radius = getOrientationRingRadius(rings, size);
     const arcs = getOrientationArcs();
     const samples = new Float64Array(numSamples);
@@ -75750,10 +75811,12 @@ return a / b;`;
     }
     const expectedDark = buildExpectedPattern(arcs, numSamples, false);
     const expectedDarkRefl = buildExpectedPattern(arcs, numSamples, true);
-    let bestScore = -1;
-    let bestAngle = 0;
-    let bestReflected = false;
-    let bestInverted = false;
+    let bestNormScore = -1;
+    let bestNormAngle = 0;
+    let bestNormRefl = false;
+    let bestInvScore = -1;
+    let bestInvAngle = 0;
+    let bestInvRefl = false;
     for (let offset = 0; offset < numSamples; offset++) {
       let score = 0;
       let scoreRefl = 0;
@@ -75763,39 +75826,69 @@ return a / b;`;
         if (dark[si] === expectedDarkRefl[i]) scoreRefl++;
       }
       const angleAtOffset = offset / numSamples * Math.PI * 2;
-      if (score > bestScore) {
-        bestScore = score;
-        bestAngle = angleAtOffset;
-        bestReflected = false;
-        bestInverted = false;
+      if (score > bestNormScore) {
+        bestNormScore = score;
+        bestNormAngle = angleAtOffset;
+        bestNormRefl = false;
       }
-      if (scoreRefl > bestScore) {
-        bestScore = scoreRefl;
-        bestAngle = angleAtOffset;
-        bestReflected = true;
-        bestInverted = false;
+      const reflMargin = numSamples * 0.03;
+      if (scoreRefl > bestNormScore + reflMargin) {
+        bestNormScore = scoreRefl;
+        bestNormAngle = angleAtOffset;
+        bestNormRefl = true;
       }
       const invScore = numSamples - score;
-      if (invScore > bestScore) {
-        bestScore = invScore;
-        bestAngle = angleAtOffset;
-        bestReflected = false;
-        bestInverted = true;
+      if (invScore > bestInvScore) {
+        bestInvScore = invScore;
+        bestInvAngle = angleAtOffset;
+        bestInvRefl = false;
       }
       const invScoreRefl = numSamples - scoreRefl;
-      if (invScoreRefl > bestScore) {
-        bestScore = invScoreRefl;
-        bestAngle = angleAtOffset;
-        bestReflected = true;
-        bestInverted = true;
+      if (invScoreRefl > bestInvScore + reflMargin) {
+        bestInvScore = invScoreRefl;
+        bestInvAngle = angleAtOffset;
+        bestInvRefl = true;
       }
     }
+    const normContrast = arcContrast(
+      samples,
+      bestNormRefl ? expectedDarkRefl : expectedDark,
+      Math.round(bestNormAngle / (2 * Math.PI) * numSamples),
+      numSamples
+    );
+    const invContrast = arcContrast(
+      samples,
+      bestInvRefl ? expectedDarkRefl : expectedDark,
+      Math.round(bestInvAngle / (2 * Math.PI) * numSamples),
+      numSamples
+    );
+    const MIN_CONTRAST = 20;
+    const useInverted = -invContrast > normContrast && -invContrast > MIN_CONTRAST;
+    const bestScore = useInverted ? bestInvScore : bestNormScore;
+    const bestAngle = useInverted ? bestInvAngle : bestNormAngle;
+    const bestReflected = useInverted ? bestInvRefl : bestNormRefl;
     return {
       angle: bestAngle,
       reflected: bestReflected,
-      inverted: bestInverted,
+      inverted: useInverted,
       confidence: bestScore / numSamples
     };
+  }
+  function arcContrast(samples, expected, offset, numSamples) {
+    let arcSum = 0, arcN = 0;
+    let gapSum = 0, gapN = 0;
+    for (let i = 0; i < numSamples; i++) {
+      const si = (i + offset) % numSamples;
+      if (expected[i] === 1) {
+        arcSum += samples[si];
+        arcN++;
+      } else {
+        gapSum += samples[si];
+        gapN++;
+      }
+    }
+    if (arcN === 0 || gapN === 0) return 0;
+    return gapSum / gapN - arcSum / arcN;
   }
   function buildExpectedPattern(arcs, numSamples, reflected) {
     const pattern = new Uint8Array(numSamples);
@@ -75932,21 +76025,25 @@ return a / b;`;
     for (let r = 0; r < rings; r++) {
       if (!isDataRing(r)) continue;
       const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+      const segAngle = 2 * Math.PI / segs;
       const centerRadius = getRingRadius(r, rings, codeSize);
       const innerRadius = centerRadius - ringWidth * 0.1;
       const outerRadius = centerRadius + ringWidth * 0.1;
       const ringBrightness = [];
       for (let segment = 0; segment < segs; segment++) {
-        const angle = getSegmentAngle(segment, segs) + orientationOffset;
-        const cosA = Math.cos(angle);
-        const sinA = Math.sin(angle);
+        const segCenter = getSegmentAngle2(segment, segs) + segAngle * 0.35 + orientationOffset;
         let sum5 = 0;
         let count2 = 0;
-        for (const sr of [innerRadius, centerRadius, outerRadius]) {
-          const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
-          if (b >= 0) {
-            sum5 += b;
-            count2++;
+        for (const aOff of [-segAngle * 0.1, 0, segAngle * 0.1]) {
+          const angle = segCenter + aOff;
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          for (const sr of [innerRadius, centerRadius, outerRadius]) {
+            const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
+            if (b >= 0) {
+              sum5 += b;
+              count2++;
+            }
           }
         }
         const avg = count2 > 0 ? sum5 / count2 : 128;
@@ -75962,6 +76059,9 @@ return a / b;`;
       }
     }
     return bits;
+  }
+  function getSegmentAngle2(segment, segmentsInRing) {
+    return segment / segmentsInRing * Math.PI * 2;
   }
 
   // src/scan/validator.ts
@@ -75989,7 +76089,7 @@ return a / b;`;
     return gray[iy * width + ix];
   }
   function checkCenterDot(gray, width, cx, cy, rings, size) {
-    const dotRadius = getRingWidth(rings, size) * 0.6;
+    const dotRadius = getRingWidth(rings, size) * 0.65;
     const sampleRadius = dotRadius * 0.5;
     let centerSum = 0;
     let centerCount = 0;
@@ -76107,13 +76207,14 @@ return a / b;`;
     } else {
       captured = source;
     }
-    const detection = detectCode(captured);
+    const detection = options.knownDetection ?? detectCode(captured);
     const detected = detection.confidence >= 0.5;
     const activeDetection = detected ? detection : { cx: captured.width / 2, cy: captured.height / 2, r: captured.width * 0.35, confidence: 0 };
     const corners = resolveCorners(activeDetection);
     const warped = warpPerspective(captured, corners, codeSize);
-    const orientation = analyzeOrientation(warped, rings, codeSize);
     const rectified = warped;
+    const center = refineCenterFromDot(rectified, rings, codeSize);
+    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy);
     const validation = validateCircularCode(rectified, rings, codeSize);
     const frameScoreResult = scoreFrame(
       captured,
@@ -76123,8 +76224,8 @@ return a / b;`;
     );
     const bits = samplePolarGrid(
       rectified,
-      codeSize / 2,
-      codeSize / 2,
+      center.cx,
+      center.cy,
       codeSize,
       rings,
       segmentsPerRing,
@@ -76247,12 +76348,110 @@ return a / b;`;
       URL.revokeObjectURL(url);
     });
   }
+  var scanImageBtn = document.getElementById("scan-image-btn");
+  var scanImageResult = document.getElementById("scan-image-result");
+  var scanImageDebug = document.getElementById("scan-image-debug");
+  function scanFromImage() {
+    const svgEl = codeOutput.querySelector("svg");
+    if (!svgEl) return;
+    const rings = parseInt(optRings.value);
+    const segmentsPerRing = parseInt(optSegments.value);
+    const eccBytes = parseInt(optEcc.value);
+    const svgString = new XMLSerializer().serializeToString(svgEl);
+    const img = new Image();
+    const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const codeRenderSize = 200;
+      const captureSize = 320;
+      const pad2 = (captureSize - codeRenderSize) / 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = captureSize;
+      canvas.height = captureSize;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = inverted ? "#111" : "#fff";
+      ctx.fillRect(0, 0, captureSize, captureSize);
+      ctx.drawImage(img, pad2, pad2, codeRenderSize, codeRenderSize);
+      const captured = canvasToBuffer(canvas);
+      const knownDetection = {
+        cx: captureSize / 2,
+        cy: captureSize / 2,
+        r: codeRenderSize / (2 * 1.15),
+        confidence: 1
+      };
+      const result = scanFrame(captured, { rings, segmentsPerRing, eccBytes, knownDetection });
+      displayScanImageResult(result, rings, segmentsPerRing);
+    };
+    img.src = url;
+  }
+  function displayScanImageResult(result, rings, segmentsPerRing) {
+    scanImageResult.style.display = "block";
+    scanImageDebug.style.display = "block";
+    if (result.decoded) {
+      scanImageResult.textContent = `Scanned: "${result.decoded}"`;
+      scanImageResult.className = "decode-result " + (result.decoded === textInput.value ? "success" : "error");
+    } else {
+      scanImageResult.textContent = `Scan failed: ${result.error || "unknown"}`;
+      scanImageResult.className = "decode-result error";
+    }
+    drawPipelineStep("gen-dbg-warp", result.warped);
+    const codeSize = result.rectified.width;
+    drawPipelineStep("gen-dbg-sample", result.rectified, (ctx, sz) => {
+      const s = sz / codeSize;
+      let bitIdx = 0;
+      for (let r = 0; r < rings; r++) {
+        if (!isDataRing(r)) continue;
+        const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+        const radius = getRingRadius(r, rings, codeSize);
+        for (let seg = 0; seg < segs; seg++) {
+          const bit = result.bits[bitIdx++] ?? 0;
+          const a = getSegmentAngle(seg, segs);
+          ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
+          ctx.beginPath();
+          ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    });
+    const resultCanvas = document.getElementById("gen-dbg-result");
+    const rCtx = resultCanvas.getContext("2d");
+    resultCanvas.width = 120;
+    resultCanvas.height = 120;
+    rCtx.fillStyle = "#111";
+    rCtx.fillRect(0, 0, 120, 120);
+    rCtx.font = "bold 12px monospace";
+    rCtx.textAlign = "center";
+    const ori = result.orientation;
+    const v = result.validation;
+    if (result.decoded) {
+      rCtx.fillStyle = "#00ff00";
+      rCtx.fillText("DECODED", 60, 30);
+      rCtx.font = "10px monospace";
+      rCtx.fillStyle = "#ccc";
+      const text = result.decoded.length > 14 ? result.decoded.slice(0, 14) + "..." : result.decoded;
+      rCtx.fillText(text, 60, 50);
+    } else {
+      rCtx.fillStyle = "#ff4444";
+      rCtx.fillText("FAILED", 60, 30);
+      rCtx.font = "9px monospace";
+      rCtx.fillStyle = "#888";
+      rCtx.fillText((result.error || "").slice(0, 18), 60, 50);
+    }
+    rCtx.font = "9px monospace";
+    rCtx.fillStyle = "#666";
+    rCtx.fillText(`dot:${v.centerDot ? "Y" : "n"} ring:${v.ringContrast ? "Y" : "n"} seg:${v.segmentPattern ? "Y" : "n"}`, 60, 70);
+    rCtx.fillText(`orient: ${(ori.angle * 180 / Math.PI).toFixed(0)} ${ori.reflected ? "REFL" : ""} ${ori.inverted ? "INV" : ""}`, 60, 85);
+    rCtx.fillText(`conf: ${(ori.confidence * 100).toFixed(0)}%`, 60, 100);
+    rCtx.fillText(`det: ${(result.detection.confidence * 100).toFixed(0)}%`, 60, 115);
+  }
   generateBtn.addEventListener("click", generate);
   textInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") generate();
   });
   downloadSvgBtn.addEventListener("click", downloadSvg);
   downloadPngBtn.addEventListener("click", downloadPng);
+  scanImageBtn.addEventListener("click", scanFromImage);
   var scanBtn = document.getElementById("scan-btn");
   var stopScanBtn = document.getElementById("stop-scan-btn");
   var scanVideo = document.getElementById("scan-video");

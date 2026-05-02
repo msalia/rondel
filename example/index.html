@@ -309,6 +309,17 @@
         <h2>Decode</h2>
         <div class="decode-result" id="decode-result"></div>
         <div class="stats" id="stats"></div>
+        <div style="margin-top:12px">
+          <button id="scan-image-btn" style="background:#222; color:#ccc; border:1px solid #333; font-size:12px; padding:8px 12px; width:100%">Scan from Image</button>
+        </div>
+        <div class="decode-result" id="scan-image-result" style="margin-top:8px; display:none"></div>
+        <div id="scan-image-debug" style="display:none; margin-top:8px">
+          <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px">
+            <div class="debug-step"><canvas id="gen-dbg-warp" width="120" height="120"></canvas><span>Warp</span></div>
+            <div class="debug-step"><canvas id="gen-dbg-sample" width="120" height="120"></canvas><span>Sample</span></div>
+            <div class="debug-step"><canvas id="gen-dbg-result" width="120" height="120"></canvas><span>Result</span></div>
+          </div>
+        </div>
       </div>
     </div>
 

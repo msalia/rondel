@@ -14,6 +14,7 @@ import { detectWithModel, isModelLoaded, loadModel } from "@/ml/detector";
 import { MultiFrameConsensus } from "@/scan/consensus";
 import { detectCircle } from "@/scan/detector";
 import { scoreFrame } from "@/scan/frameScorer";
+import { refineCenterFromDot } from "@/scan/centerRefine";
 import { analyzeOrientation } from "@/scan/orientationAnalyzer";
 import { estimateCircleCorners, warpPerspective } from "@/scan/perspective";
 import { samplePolarGrid } from "@/scan/sampler";
@@ -30,6 +31,7 @@ export type ScanFrameOptions = {
   eccBytes?: number;
   captureSize?: number;
   codeSize?: number;
+  knownDetection?: DetectionResult;
 };
 
 /** Full result from scanning a single frame including detection, orientation, bits, and validation. */
@@ -107,7 +109,8 @@ export function rectifyCode(
   const corners = resolveCorners(detection);
   const rectified = warpPerspective(frame, corners, outputSize);
 
-  const orientation = analyzeOrientation(rectified, rings, outputSize);
+  const center = refineCenterFromDot(rectified, rings, outputSize);
+  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy);
 
   const validation = validateCircularCode(rectified, rings, outputSize);
 
@@ -136,7 +139,7 @@ export function scanFrame(
     captured = source as ImageBuffer;
   }
 
-  const detection = detectCode(captured);
+  const detection = options.knownDetection ?? detectCode(captured);
   const detected = detection.confidence >= 0.5;
 
   const activeDetection: DetectionResult = detected
@@ -146,9 +149,10 @@ export function scanFrame(
   const corners = resolveCorners(activeDetection);
   const warped = warpPerspective(captured, corners, codeSize);
 
-  const orientation = analyzeOrientation(warped, rings, codeSize);
-
   const rectified = warped;
+  const center = refineCenterFromDot(rectified, rings, codeSize);
+
+  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy);
 
   const validation = validateCircularCode(rectified, rings, codeSize);
   const frameScoreResult = scoreFrame(
@@ -160,8 +164,8 @@ export function scanFrame(
 
   const bits = samplePolarGrid(
     rectified,
-    codeSize / 2,
-    codeSize / 2,
+    center.cx,
+    center.cy,
     codeSize,
     rings,
     segmentsPerRing,
@@ -217,10 +221,11 @@ export function sampleAndDecode(
     throw new Error(`Not a circular code (score=${validation.score.toFixed(2)})`);
   }
 
+  const center = refineCenterFromDot(rectified, rings, outputSize);
   const bits = samplePolarGrid(
     rectified,
-    outputSize / 2,
-    outputSize / 2,
+    center.cx,
+    center.cy,
     outputSize,
     rings,
     segmentsPerRing,

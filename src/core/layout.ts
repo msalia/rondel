@@ -8,6 +8,7 @@ export function getOrientationRingRadius(rings: number, size: number): number {
   return (rings + 1) * getRingWidth(rings, size);
 }
 
+
 /** An arc defined by start and end angles in radians. */
 export type OrientationArc = { start: number; end: number };
 
