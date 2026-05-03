@@ -283,12 +283,18 @@ async function generatePositive(index: number, split: "train" | "val"): Promise<
 
   addBackgroundNoise(ctx, SIZE, SIZE);
 
-  const text = randomString();
-  const code = encode(text, {
-    rings: randomInt(3, 6),
-    segmentsPerRing: [32, 48, 64][randomInt(0, 2)],
-    eccBytes: 16,
-  });
+  let code: EncodedCode;
+  for (;;) {
+    try {
+      const rings = randomInt(3, 6);
+      const segmentsPerRing = [32, 48, 64][randomInt(0, 2)];
+      const eccBytes = [4, 8, 16][randomInt(0, 2)];
+      code = encode(randomString(), { rings, segmentsPerRing, eccBytes });
+      break;
+    } catch {
+      // text too large for this config — retry with new random combo
+    }
+  }
 
   const codeSize = random(100, 220);
   const cx = SIZE / 2 + random(-40, 40);

@@ -1,12 +1,13 @@
 import type { CircularCodeOptions, EncodedCode } from "@/types";
 
 import { bytesToBits } from "@/core/bitstream";
+import { DEFAULT_ECC_BYTES, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getTotalSegments } from "@/core/layout";
 import { rsEncode } from "@/ecc/reedSolomon";
 
 /** Encodes a string into a circular code with Reed-Solomon error correction. */
 export function encode(input: string, opts: CircularCodeOptions = {}): EncodedCode {
-  const { rings = 5, segmentsPerRing = 48, eccBytes = 16 } = opts;
+  const { rings = DEFAULT_RINGS, segmentsPerRing = DEFAULT_SEGMENTS_PER_RING, eccBytes = DEFAULT_ECC_BYTES } = opts;
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
   const header = new Uint8Array([1, data.length]);

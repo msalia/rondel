@@ -1,5 +1,6 @@
 import type { ImageBuffer } from "@/types";
 
+import { DEFAULT_CAPTURE_SIZE } from "@/constants";
 import { getOrCreateCanvas } from "@/utils/canvas";
 
 /** Creates an empty RGBA image buffer of the given dimensions. */
@@ -26,7 +27,7 @@ export function bufferToCanvas(buf: ImageBuffer): HTMLCanvasElement {
 }
 
 /** Captures a square center-cropped frame from a video element onto a canvas. */
-export function captureFrame(video: HTMLVideoElement, targetSize = 320): HTMLCanvasElement {
+export function captureFrame(video: HTMLVideoElement, targetSize = DEFAULT_CAPTURE_SIZE): HTMLCanvasElement {
   const { canvas, ctx } = getOrCreateCanvas(targetSize, "captureFrame", {
     willReadFrequently: true,
   });
@@ -41,7 +42,7 @@ export function captureFrame(video: HTMLVideoElement, targetSize = 320): HTMLCan
 }
 
 /** Captures a video frame and returns it as an ImageBuffer. */
-export function captureFrameToBuffer(video: HTMLVideoElement, targetSize = 320): ImageBuffer {
+export function captureFrameToBuffer(video: HTMLVideoElement, targetSize = DEFAULT_CAPTURE_SIZE): ImageBuffer {
   const canvas = captureFrame(video, targetSize);
   return canvasToBuffer(canvas);
 }

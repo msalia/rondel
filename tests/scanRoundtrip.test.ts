@@ -284,4 +284,78 @@ describe("scan roundtrip", () => {
       }
     }
   });
+
+  describe("randomized rotation (orientation recovery)", () => {
+    function mulberry32(seed: number) {
+      return () => {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    const rng = mulberry32(99);
+    const rotInputs = ["ab", "hello", "abcdef"];
+    const rotScheme = colorSchemes[0];
+    const rotLayout = { rings: 5, segmentsPerRing: 48 };
+    const rotEcc = 4;
+
+    const rotations = [
+      { name: "45 deg", angle: Math.PI / 4 },
+      { name: "90 deg", angle: Math.PI / 2 },
+      { name: "180 deg", angle: Math.PI },
+      { name: "270 deg", angle: Math.PI * 1.5 },
+    ];
+
+    for (let i = 0; i < 6; i++) {
+      rotations.push({ name: `random #${i + 1}`, angle: rng() * Math.PI * 2 });
+    }
+
+    for (const input of rotInputs) {
+      for (const rot of rotations) {
+        it(`"${input}" rotated ${rot.name}`, async () => {
+          const { rings, segmentsPerRing } = rotLayout;
+          const code = encode(input, { rings, segmentsPerRing, eccBytes: rotEcc });
+          const svgSize = 400;
+          const svg = renderSVG(code, { size: svgSize, primary: rotScheme.primary, secondary: rotScheme.secondary });
+
+          const captureSize = 640;
+          const codeRenderSize = 380;
+
+          const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+          const img = await loadImage(dataUrl);
+          const canvas = createCanvas(captureSize, captureSize);
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = rotScheme.background;
+          ctx.fillRect(0, 0, captureSize, captureSize);
+
+          ctx.save();
+          ctx.translate(captureSize / 2, captureSize / 2);
+          ctx.rotate(rot.angle);
+          ctx.drawImage(img, -codeRenderSize / 2, -codeRenderSize / 2, codeRenderSize, codeRenderSize);
+          ctx.restore();
+
+          const imageData = ctx.getImageData(0, 0, captureSize, captureSize);
+          const captured: ImageBuffer = {
+            data: new Uint8ClampedArray(imageData.data),
+            width: captureSize,
+            height: captureSize,
+          };
+
+          const knownDetection = {
+            cx: captureSize / 2,
+            cy: captureSize / 2,
+            r: codeRenderSize / (2 * 1.15),
+            confidence: 1,
+          };
+
+          const result = scanFrame(captured, { rings, segmentsPerRing, eccBytes: rotEcc, knownDetection });
+
+          expect(result.error).toBeNull();
+          expect(result.decoded).toBe(input);
+        });
+      }
+    }
+  });
 });

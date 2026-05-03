@@ -1,8 +1,9 @@
 import { bitsToBytes } from "@/core/bitstream";
+import { DEFAULT_ECC_BYTES } from "@/constants";
 import { rsDecode } from "@/ecc/reedSolomon";
 
 /** Decodes a bit array back into a string using Reed-Solomon error correction. */
-export function decode(bits: number[], eccBytes = 16): string {
+export function decode(bits: number[], eccBytes = DEFAULT_ECC_BYTES): string {
   const bytes = bitsToBytes(bits);
   const decoded = rsDecode(bytes, eccBytes);
 

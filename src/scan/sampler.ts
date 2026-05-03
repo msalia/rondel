@@ -3,6 +3,7 @@ import type { ImageBuffer } from "@/types";
 import {
   getExactRingRadius,
   getRingWidth,
+  getSegmentAngle,
   getSegmentsForRing,
   isDataRing,
 } from "@/core/layout";
@@ -95,8 +96,4 @@ export function samplePolarGrid(
   }
 
   return bits;
-}
-
-function getSegmentAngle(segment: number, segmentsInRing: number): number {
-  return (segment / segmentsInRing) * Math.PI * 2;
 }

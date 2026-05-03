@@ -1,5 +1,4 @@
 import type { ImageBuffer } from "@/types";
-import { createCanvas } from "canvas";
 
 export function makeBuffer(width: number, height: number, r = 255, g = 255, b = 255): ImageBuffer {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -64,10 +63,4 @@ export function strokeCircle(buf: ImageBuffer, cx: number, cy: number, radius: n
       }
     }
   }
-}
-
-export function canvasToImageBuffer(canvas: any): ImageBuffer {
-  const ctx = canvas.getContext("2d");
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return { data: imageData.data, width: canvas.width, height: canvas.height };
 }

@@ -9,6 +9,19 @@ import type {
   ScanResult,
 } from "@/types";
 
+import {
+  CONFIDENCE_THRESHOLD,
+  DEFAULT_CAPTURE_SIZE,
+  DEFAULT_CODE_SIZE,
+  DEFAULT_CONSENSUS_REQUIRED,
+  DEFAULT_CONSENSUS_SIZE,
+  DEFAULT_CORNER_PADDING,
+  DEFAULT_ECC_BYTES,
+  DEFAULT_MIN_FRAME_SCORE,
+  DEFAULT_RINGS,
+  DEFAULT_SEGMENTS_PER_RING,
+  SCAN_TIMEOUT_MS,
+} from "@/constants";
 import { decode } from "@/core/decoder";
 import { detectWithModel, isModelLoaded, loadModel } from "@/ml/detector";
 import { MultiFrameConsensus } from "@/scan/consensus";
@@ -20,9 +33,6 @@ import { estimateCircleCorners, warpPerspective } from "@/scan/perspective";
 import { samplePolarGrid } from "@/scan/sampler";
 import { validateCircularCode } from "@/scan/validator";
 import { canvasToBuffer, captureFrameToBuffer, flipBufferHorizontal } from "@/utils/image";
-
-const CAPTURE_SIZE = 320;
-const CODE_SIZE = 300;
 
 /** Options for processing a single scan frame. */
 export type ScanFrameOptions = {
@@ -60,7 +70,7 @@ export function detectCode(buf: ImageBuffer): DetectionResult {
 
 /** Returns model-predicted corners or estimates them from detection geometry.
  *  Ensures clockwise winding (TL→TR→BR→BL in screen coords) to prevent reflected warps. */
-export function resolveCorners(detection: DetectionResult, padding = 1.15): Point[] {
+export function resolveCorners(detection: DetectionResult, padding = DEFAULT_CORNER_PADDING): Point[] {
   let corners: Point[];
   if (detection.corners && detection.corners.length === 4) {
     corners = detection.corners;
@@ -97,6 +107,7 @@ export type RectifyResult = {
   corners: Point[];
   validation: ValidationResult;
   orientation: OrientationAnalysis;
+  center: { cx: number; cy: number };
 };
 
 /** Warps, de-reflects, validates, and analyzes orientation of a detected code. */
@@ -104,8 +115,8 @@ export function rectifyCode(
   frame: ImageBuffer,
   detection: DetectionResult,
   rings: number,
-  outputSize = CODE_SIZE,
-  segmentsPerRing = 48,
+  outputSize = DEFAULT_CODE_SIZE,
+  segmentsPerRing = DEFAULT_SEGMENTS_PER_RING,
 ): RectifyResult {
   const corners = resolveCorners(detection);
   const rectified = warpPerspective(frame, corners, outputSize);
@@ -113,9 +124,9 @@ export function rectifyCode(
   const center = refineCenterFromDot(rectified, rings, outputSize);
   const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy, segmentsPerRing);
 
-  const validation = validateCircularCode(rectified, rings, outputSize, 0.5, segmentsPerRing);
+  const validation = validateCircularCode(rectified, rings, outputSize, CONFIDENCE_THRESHOLD, segmentsPerRing);
 
-  return { image: rectified, corners, validation, orientation };
+  return { image: rectified, corners, validation, orientation, center };
 }
 
 /** Processes a single frame through the full scan pipeline: detect, rectify, sample, decode. */
@@ -124,11 +135,11 @@ export function scanFrame(
   options: ScanFrameOptions = {},
 ): ScanFrameResult {
   const {
-    rings = 5,
-    segmentsPerRing = 48,
-    eccBytes = 16,
-    captureSize = CAPTURE_SIZE,
-    codeSize = CODE_SIZE,
+    rings = DEFAULT_RINGS,
+    segmentsPerRing = DEFAULT_SEGMENTS_PER_RING,
+    eccBytes = DEFAULT_ECC_BYTES,
+    captureSize = DEFAULT_CAPTURE_SIZE,
+    codeSize = DEFAULT_CODE_SIZE,
   } = options;
 
   let captured: ImageBuffer;
@@ -141,7 +152,7 @@ export function scanFrame(
   }
 
   const detection = options.knownDetection ?? detectCode(captured);
-  const detected = detection.confidence >= 0.5;
+  const detected = detection.confidence >= CONFIDENCE_THRESHOLD;
 
   const activeDetection: DetectionResult = detected
     ? detection
@@ -155,7 +166,7 @@ export function scanFrame(
 
   const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing);
 
-  const validation = validateCircularCode(rectified, rings, codeSize, 0.5, segmentsPerRing);
+  const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing);
   const frameScoreResult = scoreFrame(
     captured,
     activeDetection.cx,
@@ -180,8 +191,8 @@ export function scanFrame(
   if (validation.valid) {
     try {
       decoded = decode(bits, eccBytes);
-    } catch (e: any) {
-      error = e.message;
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : String(e);
     }
   } else {
     error = `Not a circular code (score=${validation.score.toFixed(2)})`;
@@ -209,9 +220,9 @@ export function sampleAndDecode(
   rings: number,
   segmentsPerRing: number,
   eccBytes: number,
-  outputSize = CODE_SIZE,
+  outputSize = DEFAULT_CODE_SIZE,
 ): string {
-  const { image: rectified, validation, orientation } = rectifyCode(
+  const { image: rectified, validation, orientation, center } = rectifyCode(
     frame,
     detection,
     rings,
@@ -223,7 +234,6 @@ export function sampleAndDecode(
     throw new Error(`Not a circular code (score=${validation.score.toFixed(2)})`);
   }
 
-  const center = refineCenterFromDot(rectified, rings, outputSize);
   const bits = samplePolarGrid(
     rectified,
     center.cx,
@@ -244,12 +254,12 @@ export async function scanFromVideo(
   options: ScanOptions = {},
 ): Promise<string> {
   const {
-    rings = 5,
-    segmentsPerRing = 48,
-    eccBytes = 16,
-    minFrameScore = 0.3,
-    consensusSize = 7,
-    consensusRequired = 3,
+    rings = DEFAULT_RINGS,
+    segmentsPerRing = DEFAULT_SEGMENTS_PER_RING,
+    eccBytes = DEFAULT_ECC_BYTES,
+    minFrameScore = DEFAULT_MIN_FRAME_SCORE,
+    consensusSize = DEFAULT_CONSENSUS_SIZE,
+    consensusRequired = DEFAULT_CONSENSUS_REQUIRED,
     modelUrl,
   } = options;
 
@@ -281,8 +291,8 @@ export async function scanFromVideo(
             return;
           }
         }
-      } catch {
-        // frame processing failed, continue
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message.includes("Cannot read prop")) throw e;
       }
 
       requestAnimationFrame(loop);
@@ -295,7 +305,7 @@ export async function scanFromVideo(
         running = false;
         reject(new Error("Scan timed out"));
       }
-    }, 30000);
+    }, SCAN_TIMEOUT_MS);
   });
 }
 
@@ -309,7 +319,7 @@ export function processFrame(
     minFrameScore?: number;
   } = {},
 ): ScanResult | null {
-  const { rings = 5, segmentsPerRing = 48, eccBytes = 16, minFrameScore = 0.3 } = options;
+  const { rings = DEFAULT_RINGS, segmentsPerRing = DEFAULT_SEGMENTS_PER_RING, eccBytes = DEFAULT_ECC_BYTES, minFrameScore = DEFAULT_MIN_FRAME_SCORE } = options;
 
   const result = scanFrame(video, { rings, segmentsPerRing, eccBytes });
 

@@ -2,6 +2,7 @@ import type { ConsensusResult, ScanOptions } from "@/types";
 
 import { useEffect, useRef, useState } from "react";
 
+import { DEFAULT_CONSENSUS_REQUIRED, DEFAULT_CONSENSUS_SIZE, DEFAULT_MIN_FRAME_SCORE } from "@/constants";
 import { isModelLoaded, loadModel } from "@/ml/detector";
 import { scanFrame } from "@/scan";
 import { MultiFrameConsensus } from "@/scan/consensus";
@@ -16,10 +17,10 @@ export function useCircularScanner(options: ScanOptions = {}) {
     let running = true;
     let rafId = 0;
     const consensus = new MultiFrameConsensus(
-      options.consensusSize ?? 7,
-      options.consensusRequired ?? 3,
+      options.consensusSize ?? DEFAULT_CONSENSUS_SIZE,
+      options.consensusRequired ?? DEFAULT_CONSENSUS_REQUIRED,
     );
-    const minFrameScore = options.minFrameScore ?? 0.3;
+    const minFrameScore = options.minFrameScore ?? DEFAULT_MIN_FRAME_SCORE;
 
     async function start() {
       if (options.modelUrl && !isModelLoaded()) {
@@ -63,8 +64,8 @@ export function useCircularScanner(options: ScanOptions = {}) {
             return;
           }
         }
-      } catch {
-        // skip bad frame
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message.includes("Cannot read prop")) throw e;
       }
 
       rafId = requestAnimationFrame(loop);
