@@ -1,7 +1,7 @@
 import type { ImageBuffer } from "@/types";
 
 import {
-  getRingRadius,
+  getExactRingRadius,
   getRingWidth,
   getSegmentsForRing,
   isDataRing,
@@ -41,7 +41,7 @@ export function samplePolarGrid(
     if (!isDataRing(r)) continue;
     const segs = getSegmentsForRing(r, rings, segmentsPerRing);
     const segAngle = (2 * Math.PI) / segs;
-    const centerRadius = getRingRadius(r, rings, codeSize);
+    const centerRadius = getExactRingRadius(r, rings, codeSize, segmentsPerRing);
     const innerRadius = centerRadius - ringWidth * 0.1;
     const outerRadius = centerRadius + ringWidth * 0.1;
 

@@ -1,6 +1,6 @@
 import type { ImageBuffer } from "@/types";
 
-import { getRingRadius, getRingWidth } from "@/core/layout";
+import { getExactRingRadius, getRingWidth } from "@/core/layout";
 import { toGrayscale } from "@/utils/image";
 
 /** Result of validating whether an image contains a circular code. */
@@ -18,6 +18,7 @@ export function validateCircularCode(
   rings: number,
   size: number,
   threshold = 0.5,
+  segmentsPerRing = 48,
 ): ValidationResult {
   const { data, width, height } = buf;
   const gray = toGrayscale(data, width * height);
@@ -26,7 +27,7 @@ export function validateCircularCode(
 
   const centerDot = checkCenterDot(gray, width, cx, cy, rings, size);
   const ringContrast = checkRingContrast(gray, width, cx, cy, rings, size);
-  const segmentPattern = checkSegmentPattern(gray, width, cx, cy, rings, size);
+  const segmentPattern = checkSegmentPattern(gray, width, cx, cy, rings, size, segmentsPerRing);
 
   const score = (centerDot ? 0.35 : 0) + (ringContrast ? 0.35 : 0) + (segmentPattern ? 0.3 : 0);
 
@@ -122,11 +123,12 @@ function checkSegmentPattern(
   cy: number,
   rings: number,
   size: number,
+  segmentsPerRing: number,
 ): boolean {
   let ringsWithGaps = 0;
 
   for (let r = 1; r < rings; r++) {
-    const radius = getRingRadius(r, rings, size);
+    const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
     const numSamples = 32;
     const samples: number[] = [];
 

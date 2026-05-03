@@ -1,4 +1,7 @@
-/** Returns the width of each ring in pixels for a given code size. */
+/** Fraction of one bit's angular span used as a trailing gap. */
+export const GAP_FRACTION = 0.3;
+
+/** Returns the nominal width of each radial band in pixels. */
 export function getRingWidth(rings: number, size: number): number {
   return size / (2 * (rings + 3));
 }
@@ -12,29 +15,100 @@ export function getOrientationRingRadius(rings: number, size: number): number {
 /** An arc defined by start and end angles in radians. */
 export type OrientationArc = { start: number; end: number };
 
-/** Returns the three asymmetric arcs used for orientation detection. */
-export function getOrientationArcs(): OrientationArc[] {
-  const GAP = Math.PI / 18; // 10° gap between arcs
+/**
+ * Returns the orientation ring arcs: a 101010 timing pattern followed by
+ * three asymmetric arcs (large, medium, short) for unique orientation.
+ *
+ * All arcs use the same constant bit arc length as data rings.
+ * The angular span of one bit on the orientation ring is L / R_orient.
+ */
+export function getOrientationArcs(
+  rings: number,
+  size: number,
+  baseSegments: number,
+): OrientationArc[] {
+  const R = getOrientationRingRadius(rings, size);
+  const L = getBitArcLength(rings, size, baseSegments);
+  const bitAngle = L / R;
+  const totalBits = Math.floor((2 * Math.PI) / bitAngle);
+
   const arcs: OrientationArc[] = [];
   let cursor = 0;
 
-  // Long arc: ~180°
-  arcs.push({ start: cursor, end: cursor + Math.PI });
-  cursor += Math.PI + GAP;
+  // Timing pattern: 101010 — same trailing gap as data ring arcs
+  for (let i = 0; i < 3; i++) {
+    arcs.push({
+      start: cursor,
+      end: cursor + bitAngle * (1 - GAP_FRACTION),
+    });
+    cursor += 2 * bitAngle;
+  }
 
-  // Medium arc: ~90°
-  arcs.push({ start: cursor, end: cursor + Math.PI / 2 });
-  cursor += Math.PI / 2 + GAP;
+  // 2-bit separator before orientation arcs
+  cursor += 2 * bitAngle;
 
-  // Short arc: ~45°
-  arcs.push({ start: cursor, end: cursor + Math.PI / 4 });
+  const SEPARATOR_BITS = 2;
+  const usedBits = 8;
+  const minFinalGap = 2;
+  const availableForArcs = totalBits - usedBits - SEPARATOR_BITS * 2 - minFinalGap;
+
+  const largeBits = Math.floor(availableForArcs * 4 / 7);
+  const mediumBits = Math.floor(availableForArcs * 2 / 7);
+  const shortBits = Math.max(3, availableForArcs - largeBits - mediumBits);
+
+  arcs.push({
+    start: cursor,
+    end: cursor + bitAngle * (largeBits - GAP_FRACTION),
+  });
+  cursor += (largeBits + SEPARATOR_BITS) * bitAngle;
+
+  arcs.push({
+    start: cursor,
+    end: cursor + bitAngle * (mediumBits - GAP_FRACTION),
+  });
+  cursor += (mediumBits + SEPARATOR_BITS) * bitAngle;
+
+  arcs.push({
+    start: cursor,
+    end: cursor + bitAngle * (shortBits - GAP_FRACTION),
+  });
 
   return arcs;
 }
 
-/** Returns the center radius of a specific ring by index. */
+/** Returns the nominal center radius of a ring (evenly spaced). */
 export function getRingRadius(ring: number, rings: number, size: number): number {
   return (ring + 1) * getRingWidth(rings, size);
+}
+
+/**
+ * Returns the exact ring radius derived from its segment count so that
+ * every bit has exactly the same arc length across all rings.
+ *
+ * Given L = constant arc length per bit (defined by the outermost ring),
+ * radius_i = segments_i * L / (2π).
+ *
+ * This also makes the angular gap (GAP_FRACTION * segAngle) produce a
+ * constant arc-length gap = GAP_FRACTION * L across all rings.
+ */
+export function getExactRingRadius(
+  ring: number,
+  rings: number,
+  size: number,
+  baseSegments: number,
+): number {
+  const segs = getSegmentsForRing(ring, rings, baseSegments);
+  const L = getBitArcLength(rings, size, baseSegments);
+  return (segs * L) / (2 * Math.PI);
+}
+
+/**
+ * Returns the arc length of one bit segment, constant across all rings.
+ * Derived from the outermost data ring where segments == baseSegments exactly.
+ */
+export function getBitArcLength(rings: number, size: number, baseSegments: number): number {
+  const ringWidth = getRingWidth(rings, size);
+  return (2 * Math.PI * rings * ringWidth) / baseSegments;
 }
 
 /** Returns the starting angle in radians for a segment within a ring. */

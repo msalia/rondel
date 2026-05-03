@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  GAP_FRACTION,
+  getBitArcLength,
+  getExactRingRadius,
   getRingRadius,
   getRingWidth,
   getSegmentAngle,
@@ -106,6 +109,79 @@ describe("layout", () => {
     });
   });
 
+  describe("getBitArcLength", () => {
+    it("returns 2π * rings * ringWidth / baseSegments", () => {
+      const rings = 5, size = 300, base = 48;
+      const ringWidth = getRingWidth(rings, size);
+      const expected = (2 * Math.PI * rings * ringWidth) / base;
+      expect(getBitArcLength(rings, size, base)).toBeCloseTo(expected, 10);
+    });
+
+    it("is independent of ring index", () => {
+      const L = getBitArcLength(5, 300, 48);
+      expect(L).toBeGreaterThan(0);
+    });
+  });
+
+  describe("getExactRingRadius", () => {
+    it("produces identical arc length per bit on every data ring", () => {
+      const rings = 5, size = 300, base = 48;
+      const arcLengths: number[] = [];
+      for (let r = 0; r < rings; r++) {
+        if (!isDataRing(r)) continue;
+        const radius = getExactRingRadius(r, rings, size, base);
+        const segs = getSegmentsForRing(r, rings, base);
+        arcLengths.push((2 * Math.PI * radius) / segs);
+      }
+      for (let i = 1; i < arcLengths.length; i++) {
+        expect(arcLengths[i]).toBeCloseTo(arcLengths[0], 10);
+      }
+    });
+
+    it("produces identical gap arc length on every data ring", () => {
+      const rings = 5, size = 300, base = 48;
+      const GAP_FRACTION = 0.3;
+      const gapLengths: number[] = [];
+      for (let r = 0; r < rings; r++) {
+        if (!isDataRing(r)) continue;
+        const radius = getExactRingRadius(r, rings, size, base);
+        const segs = getSegmentsForRing(r, rings, base);
+        const segAngle = (2 * Math.PI) / segs;
+        gapLengths.push(radius * segAngle * GAP_FRACTION);
+      }
+      for (let i = 1; i < gapLengths.length; i++) {
+        expect(gapLengths[i]).toBeCloseTo(gapLengths[0], 10);
+      }
+    });
+
+    it("outermost data ring matches getRingRadius exactly", () => {
+      const rings = 5, size = 300, base = 48;
+      const exact = getExactRingRadius(rings - 1, rings, size, base);
+      const nominal = getRingRadius(rings - 1, rings, size);
+      expect(exact).toBeCloseTo(nominal, 10);
+    });
+
+    it("inner rings are smaller than outer rings", () => {
+      const rings = 5, size = 300, base = 48;
+      const r1 = getExactRingRadius(1, rings, size, base);
+      const r4 = getExactRingRadius(4, rings, size, base);
+      expect(r1).toBeLessThan(r4);
+    });
+
+    it("works across multiple configurations", () => {
+      for (const [rings, base] of [[3, 32], [5, 48], [6, 64]] as const) {
+        const size = 300;
+        const L = getBitArcLength(rings, size, base);
+        for (let r = 0; r < rings; r++) {
+          if (!isDataRing(r)) continue;
+          const radius = getExactRingRadius(r, rings, size, base);
+          const segs = getSegmentsForRing(r, rings, base);
+          expect((2 * Math.PI * radius) / segs).toBeCloseTo(L, 10);
+        }
+      }
+    });
+  });
+
   describe("getOrientationRingRadius", () => {
     it("is beyond the outermost data ring", () => {
       const outerDataRadius = getRingRadius(4, 5, 300);
@@ -127,17 +203,32 @@ describe("layout", () => {
   });
 
   describe("getOrientationArcs", () => {
-    const arcs = getOrientationArcs();
+    const arcs = getOrientationArcs(5, 300, 48);
 
-    it("returns exactly 3 arcs", () => {
-      expect(arcs).toHaveLength(3);
+    it("returns 6 arcs (3 timing + 3 orientation)", () => {
+      expect(arcs).toHaveLength(6);
     });
 
-    it("arcs are ordered long, medium, short", () => {
-      const spans = arcs.map((a) => a.end - a.start);
-      expect(spans[0]).toBeCloseTo(Math.PI, 5);
-      expect(spans[1]).toBeCloseTo(Math.PI / 2, 5);
-      expect(spans[2]).toBeCloseTo(Math.PI / 4, 5);
+    it("first 3 arcs are equal-sized timing bits", () => {
+      const timingSpans = arcs.slice(0, 3).map((a) => a.end - a.start);
+      expect(timingSpans[0]).toBeCloseTo(timingSpans[1], 10);
+      expect(timingSpans[1]).toBeCloseTo(timingSpans[2], 10);
+    });
+
+    it("timing arcs use same GAP_FRACTION as data ring arcs", () => {
+      const R = getOrientationRingRadius(5, 300);
+      const L = getBitArcLength(5, 300, 48);
+      const bitAngle = L / R;
+      const expectedSpan = bitAngle * (1 - GAP_FRACTION);
+      for (const arc of arcs.slice(0, 3)) {
+        expect(arc.end - arc.start).toBeCloseTo(expectedSpan, 10);
+      }
+    });
+
+    it("orientation arcs are ordered large, medium, short", () => {
+      const orientSpans = arcs.slice(3).map((a) => a.end - a.start);
+      expect(orientSpans[0]).toBeGreaterThan(orientSpans[1]);
+      expect(orientSpans[1]).toBeGreaterThan(orientSpans[2]);
     });
 
     it("arcs do not overlap", () => {
@@ -151,18 +242,33 @@ describe("layout", () => {
       expect(lastEnd).toBeLessThan(2 * Math.PI);
     });
 
-    it("has uniform gap size between arcs", () => {
-      const gap1 = arcs[1].start - arcs[0].end;
-      const gap2 = arcs[2].start - arcs[1].end;
-      expect(gap1).toBeCloseTo(gap2, 5);
-      expect(gap1).toBeCloseTo(Math.PI / 18, 5);
+    it("all arc lengths are multiples of the bit arc length", () => {
+      const R = getOrientationRingRadius(5, 300);
+      const L = getBitArcLength(5, 300, 48);
+      const bitAngle = L / R;
+      for (const arc of arcs) {
+        const span = arc.end - arc.start;
+        const bits = (span / bitAngle) + GAP_FRACTION;
+        expect(Math.abs(bits - Math.round(bits))).toBeLessThan(0.01);
+      }
     });
 
     it("pattern is asymmetric for unique orientation", () => {
-      const spans = arcs.map((a) => a.end - a.start);
-      expect(spans[0]).not.toBeCloseTo(spans[1], 3);
-      expect(spans[1]).not.toBeCloseTo(spans[2], 3);
-      expect(spans[0]).not.toBeCloseTo(spans[2], 3);
+      const orientSpans = arcs.slice(3).map((a) => a.end - a.start);
+      expect(orientSpans[0]).not.toBeCloseTo(orientSpans[1], 3);
+      expect(orientSpans[1]).not.toBeCloseTo(orientSpans[2], 3);
+      expect(orientSpans[0]).not.toBeCloseTo(orientSpans[2], 3);
+    });
+
+    it("works across multiple configurations", () => {
+      for (const [rings, base] of [[3, 32], [5, 48], [6, 64]] as const) {
+        const a = getOrientationArcs(rings, 300, base);
+        expect(a).toHaveLength(6);
+        for (let i = 1; i < a.length; i++) {
+          expect(a[i].start).toBeGreaterThan(a[i - 1].end);
+        }
+        expect(a[a.length - 1].end).toBeLessThan(2 * Math.PI);
+      }
     });
   });
 });

@@ -4,6 +4,8 @@ import { getOrientationArcs, getOrientationRingRadius, getRingWidth } from "@/co
 import { makeWhiteBuffer, makeBlackBuffer } from "./helpers";
 import type { ImageBuffer } from "@/types";
 
+const BASE_SEGMENTS = 48;
+
 function drawOrientationRing(
   buf: ImageBuffer,
   rings: number,
@@ -14,7 +16,7 @@ function drawOrientationRing(
   const cx = size / 2;
   const cy = size / 2;
   const radius = getOrientationRingRadius(rings, size);
-  const arcs = getOrientationArcs();
+  const arcs = getOrientationArcs(rings, size, BASE_SEGMENTS);
   const strokeHalf = getRingWidth(rings, size) * 0.4;
 
   const orderedArcs = reflected ? [...arcs].reverse() : arcs;
@@ -57,7 +59,7 @@ function drawInvertedOrientationRing(
   const cx = size / 2;
   const cy = size / 2;
   const radius = getOrientationRingRadius(rings, size);
-  const arcs = getOrientationArcs();
+  const arcs = getOrientationArcs(rings, size, BASE_SEGMENTS);
   const strokeHalf = getRingWidth(rings, size) * 0.4;
 
   for (const arc of arcs) {

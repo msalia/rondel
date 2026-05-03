@@ -105,14 +105,15 @@ export function rectifyCode(
   detection: DetectionResult,
   rings: number,
   outputSize = CODE_SIZE,
+  segmentsPerRing = 48,
 ): RectifyResult {
   const corners = resolveCorners(detection);
   const rectified = warpPerspective(frame, corners, outputSize);
 
   const center = refineCenterFromDot(rectified, rings, outputSize);
-  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy);
+  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy, segmentsPerRing);
 
-  const validation = validateCircularCode(rectified, rings, outputSize);
+  const validation = validateCircularCode(rectified, rings, outputSize, 0.5, segmentsPerRing);
 
   return { image: rectified, corners, validation, orientation };
 }
@@ -152,9 +153,9 @@ export function scanFrame(
   const rectified = warped;
   const center = refineCenterFromDot(rectified, rings, codeSize);
 
-  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy);
+  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing);
 
-  const validation = validateCircularCode(rectified, rings, codeSize);
+  const validation = validateCircularCode(rectified, rings, codeSize, 0.5, segmentsPerRing);
   const frameScoreResult = scoreFrame(
     captured,
     activeDetection.cx,
@@ -215,6 +216,7 @@ export function sampleAndDecode(
     detection,
     rings,
     outputSize,
+    segmentsPerRing,
   );
 
   if (!validation.valid) {

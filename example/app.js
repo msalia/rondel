@@ -75024,6 +75024,78 @@ return a / b;`;
     return bytes;
   }
 
+  // src/core/layout.ts
+  var GAP_FRACTION = 0.3;
+  function getRingWidth(rings, size) {
+    return size / (2 * (rings + 3));
+  }
+  function getOrientationRingRadius(rings, size) {
+    return (rings + 1) * getRingWidth(rings, size);
+  }
+  function getOrientationArcs(rings, size, baseSegments) {
+    const R = getOrientationRingRadius(rings, size);
+    const L = getBitArcLength(rings, size, baseSegments);
+    const bitAngle = L / R;
+    const totalBits = Math.floor(2 * Math.PI / bitAngle);
+    const arcs = [];
+    let cursor = 0;
+    for (let i = 0; i < 3; i++) {
+      arcs.push({
+        start: cursor,
+        end: cursor + bitAngle * (1 - GAP_FRACTION)
+      });
+      cursor += 2 * bitAngle;
+    }
+    cursor += 2 * bitAngle;
+    const SEPARATOR_BITS = 2;
+    const usedBits = 8;
+    const minFinalGap = 2;
+    const availableForArcs = totalBits - usedBits - SEPARATOR_BITS * 2 - minFinalGap;
+    const largeBits = Math.floor(availableForArcs * 4 / 7);
+    const mediumBits = Math.floor(availableForArcs * 2 / 7);
+    const shortBits = Math.max(3, availableForArcs - largeBits - mediumBits);
+    arcs.push({
+      start: cursor,
+      end: cursor + bitAngle * (largeBits - GAP_FRACTION)
+    });
+    cursor += (largeBits + SEPARATOR_BITS) * bitAngle;
+    arcs.push({
+      start: cursor,
+      end: cursor + bitAngle * (mediumBits - GAP_FRACTION)
+    });
+    cursor += (mediumBits + SEPARATOR_BITS) * bitAngle;
+    arcs.push({
+      start: cursor,
+      end: cursor + bitAngle * (shortBits - GAP_FRACTION)
+    });
+    return arcs;
+  }
+  function getExactRingRadius(ring, rings, size, baseSegments) {
+    const segs = getSegmentsForRing(ring, rings, baseSegments);
+    const L = getBitArcLength(rings, size, baseSegments);
+    return segs * L / (2 * Math.PI);
+  }
+  function getBitArcLength(rings, size, baseSegments) {
+    const ringWidth = getRingWidth(rings, size);
+    return 2 * Math.PI * rings * ringWidth / baseSegments;
+  }
+  function getSegmentAngle(segment, segmentsInRing) {
+    return segment / segmentsInRing * Math.PI * 2;
+  }
+  function isDataRing(ring) {
+    return ring > 0;
+  }
+  function getSegmentsForRing(ring, rings, baseSegments) {
+    return Math.max(8, Math.round(baseSegments * (ring + 1) / rings));
+  }
+  function getTotalSegments(rings, baseSegments) {
+    let total = 0;
+    for (let r = 0; r < rings; r++) {
+      if (isDataRing(r)) total += getSegmentsForRing(r, rings, baseSegments);
+    }
+    return total;
+  }
+
   // src/ecc/galoisField.ts
   var PRIM_POLY = 285;
   var EXP_TABLE = new Uint8Array(512);
@@ -75213,6 +75285,13 @@ return a / b;`;
     const payload = new Uint8Array([...header, ...data]);
     const encoded = rsEncode(payload, eccBytes);
     const bits = bytesToBits(encoded);
+    const capacity = getTotalSegments(rings, segmentsPerRing);
+    if (bits.length > capacity) {
+      const maxDataBytes = Math.floor(capacity / 8) - eccBytes - 2;
+      throw new Error(
+        `Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxDataBytes)} data bytes with ${eccBytes} ECC bytes.`
+      );
+    }
     return {
       bits,
       rings,
@@ -75239,49 +75318,10 @@ return a / b;`;
     return new TextDecoder().decode(payload);
   }
 
-  // src/core/layout.ts
-  function getRingWidth(rings, size) {
-    return size / (2 * (rings + 3));
-  }
-  function getOrientationRingRadius(rings, size) {
-    return (rings + 1) * getRingWidth(rings, size);
-  }
-  function getOrientationArcs() {
-    const GAP = Math.PI / 18;
-    const arcs = [];
-    let cursor = 0;
-    arcs.push({ start: cursor, end: cursor + Math.PI });
-    cursor += Math.PI + GAP;
-    arcs.push({ start: cursor, end: cursor + Math.PI / 2 });
-    cursor += Math.PI / 2 + GAP;
-    arcs.push({ start: cursor, end: cursor + Math.PI / 4 });
-    return arcs;
-  }
-  function getRingRadius(ring, rings, size) {
-    return (ring + 1) * getRingWidth(rings, size);
-  }
-  function getSegmentAngle(segment, segmentsInRing) {
-    return segment / segmentsInRing * Math.PI * 2;
-  }
-  function isDataRing(ring) {
-    return ring > 0;
-  }
-  function getSegmentsForRing(ring, rings, baseSegments) {
-    return Math.max(8, Math.round(baseSegments * (ring + 1) / rings));
-  }
-  function getTotalSegments(rings, baseSegments) {
-    let total = 0;
-    for (let r = 0; r < rings; r++) {
-      if (isDataRing(r)) total += getSegmentsForRing(r, rings, baseSegments);
-    }
-    return total;
-  }
-
   // src/render/svgRenderer.ts
   var DEFAULT_SIZE = 300;
   var DEFAULT_PRIMARY = "#000000";
   var DEFAULT_SECONDARY = "#d0d0d0";
-  var GAP_FRACTION = 0.3;
   var STROKE_WIDTH_RATIO = 0.5;
   var CENTER_RADIUS_RATIO = 0.75;
   var SECONDARY_SEPARATION = 1;
@@ -75303,7 +75343,7 @@ return a / b;`;
     for (let r = 0; r < rings; r++) {
       const segs = getSegmentsForRing(r, rings, segmentsPerRing);
       const segAngle = 2 * Math.PI / segs;
-      const radius = getRingRadius(r, rings, size);
+      const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
       if (!isDataRing(r)) continue;
       const ringBits = [];
       for (let i2 = 0; i2 < segs; i2++) {
@@ -75385,7 +75425,7 @@ return a / b;`;
     let orientationPaths = "";
     const orientationRadius = getOrientationRingRadius(rings, size);
     const orientationStroke = ringWidth * STROKE_WIDTH_RATIO;
-    for (const arc of getOrientationArcs()) {
+    for (const arc of getOrientationArcs(rings, size, segmentsPerRing)) {
       const sweep = arc.end - arc.start;
       const largeArc = sweep > Math.PI ? 1 : 0;
       const x1 = cx + orientationRadius * Math.cos(arc.start);
@@ -75783,13 +75823,24 @@ return a / b;`;
   }
 
   // src/scan/orientationAnalyzer.ts
-  function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY) {
+  function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY, segmentsPerRing = 48) {
     const { data, width, height } = buf;
     const gray = toGrayscale(data, width * height);
     const cx = centerX ?? width / 2;
     const cy = centerY ?? height / 2;
     const radius = getOrientationRingRadius(rings, size);
-    const arcs = getOrientationArcs();
+    const arcs = getOrientationArcs(rings, size, segmentsPerRing);
+    const strokeWidth = getRingWidth(rings, size) * 0.5;
+    const capAngle = strokeWidth / (2 * radius);
+    const timingBlock = {
+      start: arcs[0].start - capAngle,
+      end: arcs[2].end + capAngle
+    };
+    const orientArcs = arcs.slice(3).map((a) => ({
+      start: a.start - capAngle,
+      end: a.end + capAngle
+    }));
+    const visualArcs = [timingBlock, ...orientArcs];
     const samples = new Float64Array(numSamples);
     for (let i = 0; i < numSamples; i++) {
       const angle = i / numSamples * Math.PI * 2;
@@ -75809,8 +75860,8 @@ return a / b;`;
     for (let i = 0; i < numSamples; i++) {
       dark[i] = samples[i] < threshold3 ? 1 : 0;
     }
-    const expectedDark = buildExpectedPattern(arcs, numSamples, false);
-    const expectedDarkRefl = buildExpectedPattern(arcs, numSamples, true);
+    const expectedDark = buildExpectedPattern(visualArcs, numSamples, false);
+    const expectedDarkRefl = buildExpectedPattern(visualArcs, numSamples, true);
     let bestNormScore = -1;
     let bestNormAngle = 0;
     let bestNormRefl = false;
@@ -76026,7 +76077,7 @@ return a / b;`;
       if (!isDataRing(r)) continue;
       const segs = getSegmentsForRing(r, rings, segmentsPerRing);
       const segAngle = 2 * Math.PI / segs;
-      const centerRadius = getRingRadius(r, rings, codeSize);
+      const centerRadius = getExactRingRadius(r, rings, codeSize, segmentsPerRing);
       const innerRadius = centerRadius - ringWidth * 0.1;
       const outerRadius = centerRadius + ringWidth * 0.1;
       const ringBrightness = [];
@@ -76065,14 +76116,14 @@ return a / b;`;
   }
 
   // src/scan/validator.ts
-  function validateCircularCode(buf, rings, size, threshold3 = 0.5) {
+  function validateCircularCode(buf, rings, size, threshold3 = 0.5, segmentsPerRing = 48) {
     const { data, width, height } = buf;
     const gray = toGrayscale(data, width * height);
     const cx = width / 2;
     const cy = height / 2;
     const centerDot = checkCenterDot(gray, width, cx, cy, rings, size);
     const ringContrast = checkRingContrast(gray, width, cx, cy, rings, size);
-    const segmentPattern = checkSegmentPattern(gray, width, cx, cy, rings, size);
+    const segmentPattern = checkSegmentPattern(gray, width, cx, cy, rings, size, segmentsPerRing);
     const score = (centerDot ? 0.35 : 0) + (ringContrast ? 0.35 : 0) + (segmentPattern ? 0.3 : 0);
     return {
       valid: score >= threshold3,
@@ -76134,10 +76185,10 @@ return a / b;`;
     }
     return transitions >= numAngles * 0.4;
   }
-  function checkSegmentPattern(gray, width, cx, cy, rings, size) {
+  function checkSegmentPattern(gray, width, cx, cy, rings, size, segmentsPerRing) {
     let ringsWithGaps = 0;
     for (let r = 1; r < rings; r++) {
-      const radius = getRingRadius(r, rings, size);
+      const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
       const numSamples = 32;
       const samples = [];
       for (let s = 0; s < numSamples; s++) {
@@ -76214,8 +76265,8 @@ return a / b;`;
     const warped = warpPerspective(captured, corners, codeSize);
     const rectified = warped;
     const center = refineCenterFromDot(rectified, rings, codeSize);
-    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy);
-    const validation = validateCircularCode(rectified, rings, codeSize);
+    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing);
+    const validation = validateCircularCode(rectified, rings, codeSize, 0.5, segmentsPerRing);
     const frameScoreResult = scoreFrame(
       captured,
       activeDetection.cx,
@@ -76388,31 +76439,20 @@ return a / b;`;
   function displayScanImageResult(result, rings, segmentsPerRing) {
     scanImageResult.style.display = "block";
     scanImageDebug.style.display = "block";
+    const val = result.validation;
+    const vDetail = `valid=${val.valid} score=${val.score.toFixed(2)} dot=${val.centerDot ? "Y" : "N"} ring=${val.ringContrast ? "Y" : "N"} seg=${val.segmentPattern ? "Y" : "N"}`;
     if (result.decoded) {
-      scanImageResult.textContent = `Scanned: "${result.decoded}"`;
-      scanImageResult.className = "decode-result " + (result.decoded === textInput.value ? "success" : "error");
+      const match = result.decoded === textInput.value;
+      scanImageResult.textContent = `Scanned: "${result.decoded}"${match ? "" : ` (expected "${textInput.value}")`} | ${vDetail}`;
+      scanImageResult.className = "decode-result " + (match ? "success" : "error");
     } else {
-      scanImageResult.textContent = `Scan failed: ${result.error || "unknown"}`;
+      scanImageResult.textContent = `Scan failed: ${result.error || "unknown"} | ${vDetail}`;
       scanImageResult.className = "decode-result error";
     }
     drawPipelineStep("gen-dbg-warp", result.warped);
     const codeSize = result.rectified.width;
     drawPipelineStep("gen-dbg-sample", result.rectified, (ctx, sz) => {
-      const s = sz / codeSize;
-      let bitIdx = 0;
-      for (let r = 0; r < rings; r++) {
-        if (!isDataRing(r)) continue;
-        const segs = getSegmentsForRing(r, rings, segmentsPerRing);
-        const radius = getRingRadius(r, rings, codeSize);
-        for (let seg = 0; seg < segs; seg++) {
-          const bit = result.bits[bitIdx++] ?? 0;
-          const a = getSegmentAngle(seg, segs);
-          ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
-          ctx.beginPath();
-          ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      drawSampleOverlay(ctx, sz, codeSize, rings, segmentsPerRing, result.bits, result.orientation.angle);
     });
     const resultCanvas = document.getElementById("gen-dbg-result");
     const rCtx = resultCanvas.getContext("2d");
@@ -76530,6 +76570,35 @@ return a / b;`;
     ctx.drawImage(srcCanvas, 0, 0, buf.width, buf.height, 0, 0, sz, sz);
     if (overlay) overlay(ctx, sz);
   }
+  function drawSampleOverlay(ctx, sz, codeSize, rings, segmentsPerRing, bits, oriAngle) {
+    const s = sz / codeSize;
+    const cx = codeSize / 2;
+    const cy = codeSize / 2;
+    let bitIdx = 0;
+    for (let r = 0; r < rings; r++) {
+      if (!isDataRing(r)) continue;
+      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+      const segAngle = 2 * Math.PI / segs;
+      const radius = getExactRingRadius(r, rings, codeSize, segmentsPerRing);
+      for (let seg = 0; seg < segs; seg++) {
+        const bit = bits[bitIdx++] ?? 0;
+        const a = getSegmentAngle(seg, segs) + segAngle * 0.35 + oriAngle;
+        ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
+        ctx.beginPath();
+        ctx.arc((cx + radius * Math.cos(a)) * s, (cy + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    const oriRadius = getOrientationRingRadius(rings, codeSize) * s;
+    const oriArcs = getOrientationArcs(rings, codeSize, segmentsPerRing);
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 1.5;
+    for (const arc of oriArcs) {
+      ctx.beginPath();
+      ctx.arc(cx * s, cy * s, oriRadius, arc.start + oriAngle, arc.end + oriAngle);
+      ctx.stroke();
+    }
+  }
   function scanLoop() {
     if (!scanning || paused) return;
     const now2 = performance.now();
@@ -76595,21 +76664,7 @@ return a / b;`;
     drawPipelineStep("dbg-warp", result.warped);
     const codeSize = result.rectified.width;
     drawPipelineStep("dbg-sample", result.rectified, (ctx, sz) => {
-      const s = sz / codeSize;
-      let bitIdx = 0;
-      for (let r = 0; r < rings; r++) {
-        if (!isDataRing(r)) continue;
-        const segs = getSegmentsForRing(r, rings, segmentsPerRing);
-        const radius = getRingRadius(r, rings, codeSize);
-        for (let seg = 0; seg < segs; seg++) {
-          const bit = result.bits[bitIdx++] ?? 0;
-          const a = getSegmentAngle(seg, segs);
-          ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
-          ctx.beginPath();
-          ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      drawSampleOverlay(ctx, sz, codeSize, rings, segmentsPerRing, result.bits, result.orientation.angle);
     });
     const resultCanvas = document.getElementById("dbg-result");
     const rCtx = resultCanvas.getContext("2d");
@@ -76639,9 +76694,10 @@ return a / b;`;
     rCtx.fillText(`dot:${v.centerDot ? "Y" : "n"} ring:${v.ringContrast ? "Y" : "n"} seg:${v.segmentPattern ? "Y" : "n"}`, 60, 80);
     rCtx.fillText(`orient: ${(ori.angle * 180 / Math.PI).toFixed(0)} ${ori.reflected ? "REFL" : ""} ${ori.inverted ? "INV" : ""}`, 60, 95);
     rCtx.fillText(`conf: ${(ori.confidence * 100).toFixed(0)}%`, 60, 110);
+    const vDetail = `dot:${v.centerDot ? "Y" : "N"} ring:${v.ringContrast ? "Y" : "N"} seg:${v.segmentPattern ? "Y" : "N"} score:${v.score.toFixed(2)}`;
     if (result.decoded) {
       decodeCount++;
-      scanResultEl.textContent = result.decoded;
+      scanResultEl.textContent = `"${result.decoded}" | ${vDetail}`;
       scanResultEl.className = "decode-result success";
       scanStatus.textContent = `Decoded: "${result.decoded}"`;
       scanStatus.className = "scan-status active";
@@ -76653,6 +76709,8 @@ return a / b;`;
       resumeBtn.style.display = "inline-block";
       return;
     }
+    scanResultEl.textContent = `${result.error || "unknown"} | ${vDetail}`;
+    scanResultEl.className = "decode-result error";
     const stage = result.detected ? "detected" : "center-crop";
     const detail = result.error ? ` | ${result.error.slice(0, 50)}` : "";
     octx.fillStyle = "#ffffff";

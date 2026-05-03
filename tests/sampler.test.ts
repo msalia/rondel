@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { samplePolarGrid } from "@/scan/sampler";
-import { getRingRadius, getSegmentsForRing, getTotalSegments, isDataRing } from "@/core/layout";
+import { getExactRingRadius, getSegmentsForRing, getTotalSegments, isDataRing } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer, makeGrayBuffer, fillCircle } from "./helpers";
 import type { ImageBuffer } from "@/types";
 
@@ -72,7 +72,7 @@ describe("samplePolarGrid", () => {
     const rings = 5;
     const segs = 48;
     const targetRing = 2;
-    const radius = getRingRadius(targetRing, rings, size);
+    const radius = getExactRingRadius(targetRing, rings, size, segs);
     const buf = makeWhiteBuffer(size);
     fillCircle(buf, size / 2, size / 2, radius + 3, 0, 0, 0);
     fillCircle(buf, size / 2, size / 2, radius - 3, 255, 255, 255);

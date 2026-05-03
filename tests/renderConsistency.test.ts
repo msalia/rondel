@@ -4,10 +4,10 @@ import { decode } from "@/core/decoder";
 import { getSegmentsForRing, getTotalSegments, isDataRing } from "@/core/layout";
 
 describe("render consistency", () => {
-  it("encoder produces enough bits to fill all data ring segments", () => {
-    const code = encode("hello world", { rings: 5, segmentsPerRing: 48, eccBytes: 16 });
+  it("encoder produces bits that fit in the grid", () => {
+    const code = encode("hello", { rings: 5, segmentsPerRing: 48, eccBytes: 4 });
     const totalSlots = getTotalSegments(code.rings, code.segmentsPerRing);
-    expect(code.bits.length).toBeGreaterThanOrEqual(totalSlots);
+    expect(code.bits.length).toBeLessThanOrEqual(totalSlots);
   });
 
   it("bit consumption order matches layout for multiple configs", () => {
@@ -56,13 +56,12 @@ describe("render consistency", () => {
 
   it("encode/decode roundtrip works with adaptive segments", () => {
     const configs = [
-      { rings: 3, segmentsPerRing: 32, eccBytes: 8 },
-      { rings: 5, segmentsPerRing: 48, eccBytes: 16 },
-      { rings: 6, segmentsPerRing: 64, eccBytes: 16 },
+      { rings: 3, segmentsPerRing: 32, eccBytes: 2, input: "ab" },
+      { rings: 5, segmentsPerRing: 48, eccBytes: 4, input: "test" },
+      { rings: 6, segmentsPerRing: 64, eccBytes: 4, input: "test" },
     ];
 
-    for (const cfg of configs) {
-      const input = "test";
+    for (const { input, ...cfg } of configs) {
       const code = encode(input, cfg);
       const output = decode(code.bits, cfg.eccBytes);
       expect(output).toBe(input);

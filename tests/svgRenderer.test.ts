@@ -4,7 +4,7 @@ import { getRingWidth, getSegmentsForRing, isDataRing } from "@/core/layout";
 import { renderSVG } from "@/render/svgRenderer";
 
 describe("renderSVG", () => {
-  const code = encode("hello", { rings: 5, segmentsPerRing: 48 });
+  const code = encode("hello", { rings: 5, segmentsPerRing: 48, eccBytes: 4 });
 
   it("returns valid SVG string", () => {
     const svg = renderSVG(code);
@@ -83,12 +83,12 @@ describe("renderSVG", () => {
   });
 
   describe("orientation ring", () => {
-    it("renders 3 orientation arc paths", () => {
+    it("renders 6 orientation arc paths (3 timing + 3 orientation)", () => {
       const svg = renderSVG(code, { size: 300 });
       const groups = svg.split('<g stroke="#000000"');
       const orientationGroup = groups[groups.length - 1].split("</g>")[0];
       const pathCount = (orientationGroup.match(/<path/g) || []).length;
-      expect(pathCount).toBe(3);
+      expect(pathCount).toBe(6);
     });
 
     it("orientation arcs use the primary color", () => {
@@ -103,16 +103,16 @@ describe("renderSVG", () => {
       const allRadii = [...svg.matchAll(/A (\d+\.?\d*) \1/g)].map((m) => parseFloat(m[1]));
       const maxDataRadius = (rings) * getRingWidth(rings, 300);
       const orientationRadii = allRadii.filter((r) => r > maxDataRadius);
-      expect(orientationRadii.length).toBe(3);
+      expect(orientationRadii.length).toBe(6);
     });
 
     it("orientation ring is present for all ring counts", () => {
       for (const rings of [3, 4, 5, 6]) {
-        const c = encode("test", { rings, segmentsPerRing: 48 });
+        const c = encode("test", { rings, segmentsPerRing: 48, eccBytes: 4 });
         const svg = renderSVG(c, { size: 300 });
         const groups = svg.split('<g stroke="#000000"');
         const lastGroup = groups[groups.length - 1].split("</g>")[0];
-        expect((lastGroup.match(/<path/g) || []).length).toBe(3);
+        expect((lastGroup.match(/<path/g) || []).length).toBe(6);
       }
     });
   });

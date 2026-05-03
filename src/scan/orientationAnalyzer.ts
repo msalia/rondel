@@ -1,6 +1,6 @@
 import type { ImageBuffer } from "@/types";
 
-import { getOrientationArcs, getOrientationRingRadius } from "@/core/layout";
+import { getOrientationArcs, getOrientationRingRadius, getRingWidth } from "@/core/layout";
 import { toGrayscale } from "@/utils/image";
 
 /** Result of analyzing the orientation ring pattern. */
@@ -19,13 +19,29 @@ export function analyzeOrientation(
   numSamples = 360,
   centerX?: number,
   centerY?: number,
+  segmentsPerRing = 48,
 ): OrientationAnalysis {
   const { data, width, height } = buf;
   const gray = toGrayscale(data, width * height);
   const cx = centerX ?? width / 2;
   const cy = centerY ?? height / 2;
   const radius = getOrientationRingRadius(rings, size);
-  const arcs = getOrientationArcs();
+  const arcs = getOrientationArcs(rings, size, segmentsPerRing);
+
+  // Merge timing arcs (0-2) into one block — at low render resolutions,
+  // round caps cause the narrow timing arcs to blend into a single dark band.
+  // The separator gap between timing and orientation arcs is wide enough to survive.
+  const strokeWidth = getRingWidth(rings, size) * 0.5;
+  const capAngle = strokeWidth / (2 * radius);
+  const timingBlock = {
+    start: arcs[0].start - capAngle,
+    end: arcs[2].end + capAngle,
+  };
+  const orientArcs = arcs.slice(3).map(a => ({
+    start: a.start - capAngle,
+    end: a.end + capAngle,
+  }));
+  const visualArcs = [timingBlock, ...orientArcs];
 
   const samples = new Float64Array(numSamples);
   for (let i = 0; i < numSamples; i++) {
@@ -49,8 +65,8 @@ export function analyzeOrientation(
     dark[i] = samples[i] < threshold ? 1 : 0;
   }
 
-  const expectedDark = buildExpectedPattern(arcs, numSamples, false);
-  const expectedDarkRefl = buildExpectedPattern(arcs, numSamples, true);
+  const expectedDark = buildExpectedPattern(visualArcs, numSamples, false);
+  const expectedDarkRefl = buildExpectedPattern(visualArcs, numSamples, true);
 
   let bestNormScore = -1;
   let bestNormAngle = 0;

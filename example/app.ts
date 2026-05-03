@@ -3,7 +3,7 @@ import { decode } from "@/core/decoder";
 import { getTotalSegments } from "@/core/layout";
 import { renderSVG } from "@/render/svgRenderer";
 import { renderCanvas } from "@/render/canvasRenderer";
-import { getRingRadius, getSegmentsForRing, getSegmentAngle, isDataRing } from "@/core/layout";
+import { getExactRingRadius, getOrientationArcs, getOrientationRingRadius, getSegmentsForRing, getSegmentAngle, isDataRing } from "@/core/layout";
 import { loadModel, isModelLoaded } from "@/ml/detector";
 import { scanFrame } from "@/scan";
 import { bufferToCanvas, canvasToBuffer, captureFrameToBuffer } from "@/utils/image";
@@ -165,11 +165,14 @@ function displayScanImageResult(
   scanImageResult.style.display = "block";
   scanImageDebug.style.display = "block";
 
+  const val = result.validation;
+  const vDetail = `valid=${val.valid} score=${val.score.toFixed(2)} dot=${val.centerDot ? "Y" : "N"} ring=${val.ringContrast ? "Y" : "N"} seg=${val.segmentPattern ? "Y" : "N"}`;
   if (result.decoded) {
-    scanImageResult.textContent = `Scanned: "${result.decoded}"`;
-    scanImageResult.className = "decode-result " + (result.decoded === textInput.value ? "success" : "error");
+    const match = result.decoded === textInput.value;
+    scanImageResult.textContent = `Scanned: "${result.decoded}"${match ? "" : ` (expected "${textInput.value}")`} | ${vDetail}`;
+    scanImageResult.className = "decode-result " + (match ? "success" : "error");
   } else {
-    scanImageResult.textContent = `Scan failed: ${result.error || "unknown"}`;
+    scanImageResult.textContent = `Scan failed: ${result.error || "unknown"} | ${vDetail}`;
     scanImageResult.className = "decode-result error";
   }
 
@@ -177,21 +180,7 @@ function displayScanImageResult(
 
   const codeSize = result.rectified.width;
   drawPipelineStep("gen-dbg-sample", result.rectified, (ctx, sz) => {
-    const s = sz / codeSize;
-    let bitIdx = 0;
-    for (let r = 0; r < rings; r++) {
-      if (!isDataRing(r)) continue;
-      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
-      const radius = getRingRadius(r, rings, codeSize);
-      for (let seg = 0; seg < segs; seg++) {
-        const bit = result.bits[bitIdx++] ?? 0;
-        const a = getSegmentAngle(seg, segs);
-        ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
-        ctx.beginPath();
-        ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+    drawSampleOverlay(ctx, sz, codeSize, rings, segmentsPerRing, result.bits, result.orientation.angle);
   });
 
   const resultCanvas = document.getElementById("gen-dbg-result") as HTMLCanvasElement;
@@ -325,6 +314,46 @@ function drawPipelineStep(
   if (overlay) overlay(ctx, sz);
 }
 
+function drawSampleOverlay(
+  ctx: CanvasRenderingContext2D,
+  sz: number,
+  codeSize: number,
+  rings: number,
+  segmentsPerRing: number,
+  bits: number[],
+  oriAngle: number,
+) {
+  const s = sz / codeSize;
+  const cx = codeSize / 2;
+  const cy = codeSize / 2;
+
+  let bitIdx = 0;
+  for (let r = 0; r < rings; r++) {
+    if (!isDataRing(r)) continue;
+    const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+    const segAngle = (2 * Math.PI) / segs;
+    const radius = getExactRingRadius(r, rings, codeSize, segmentsPerRing);
+    for (let seg = 0; seg < segs; seg++) {
+      const bit = bits[bitIdx++] ?? 0;
+      const a = getSegmentAngle(seg, segs) + segAngle * 0.35 + oriAngle;
+      ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
+      ctx.beginPath();
+      ctx.arc((cx + radius * Math.cos(a)) * s, (cy + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const oriRadius = getOrientationRingRadius(rings, codeSize) * s;
+  const oriArcs = getOrientationArcs(rings, codeSize, segmentsPerRing);
+  ctx.strokeStyle = "#00ffff";
+  ctx.lineWidth = 1.5;
+  for (const arc of oriArcs) {
+    ctx.beginPath();
+    ctx.arc(cx * s, cy * s, oriRadius, arc.start + oriAngle, arc.end + oriAngle);
+    ctx.stroke();
+  }
+}
+
 function scanLoop() {
   if (!scanning || paused) return;
 
@@ -404,21 +433,7 @@ function scanLoop() {
 
   const codeSize = result.rectified.width;
   drawPipelineStep("dbg-sample", result.rectified, (ctx, sz) => {
-    const s = sz / codeSize;
-    let bitIdx = 0;
-    for (let r = 0; r < rings; r++) {
-      if (!isDataRing(r)) continue;
-      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
-      const radius = getRingRadius(r, rings, codeSize);
-      for (let seg = 0; seg < segs; seg++) {
-        const bit = result.bits[bitIdx++] ?? 0;
-        const a = getSegmentAngle(seg, segs);
-        ctx.fillStyle = bit ? "#00ff00" : "#ff000080";
-        ctx.beginPath();
-        ctx.arc((codeSize / 2 + radius * Math.cos(a)) * s, (codeSize / 2 + radius * Math.sin(a)) * s, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
+    drawSampleOverlay(ctx, sz, codeSize, rings, segmentsPerRing, result.bits, result.orientation.angle);
   });
 
   const resultCanvas = document.getElementById("dbg-result") as HTMLCanvasElement;
@@ -451,9 +466,10 @@ function scanLoop() {
   rCtx.fillText(`conf: ${(ori.confidence * 100).toFixed(0)}%`, 60, 110);
 
   // --- Result handling ---
+  const vDetail = `dot:${v.centerDot ? "Y" : "N"} ring:${v.ringContrast ? "Y" : "N"} seg:${v.segmentPattern ? "Y" : "N"} score:${v.score.toFixed(2)}`;
   if (result.decoded) {
     decodeCount++;
-    scanResultEl.textContent = result.decoded;
+    scanResultEl.textContent = `"${result.decoded}" | ${vDetail}`;
     scanResultEl.className = "decode-result success";
     scanStatus.textContent = `Decoded: "${result.decoded}"`;
     scanStatus.className = "scan-status active";
@@ -467,6 +483,8 @@ function scanLoop() {
     return;
   }
 
+  scanResultEl.textContent = `${result.error || "unknown"} | ${vDetail}`;
+  scanResultEl.className = "decode-result error";
   const stage = result.detected ? "detected" : "center-crop";
   const detail = result.error ? ` | ${result.error.slice(0, 50)}` : "";
   octx.fillStyle = "#ffffff";

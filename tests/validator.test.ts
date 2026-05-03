@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateCircularCode } from "@/scan/validator";
-import { getRingRadius, getRingWidth } from "@/core/layout";
+import { getExactRingRadius, getRingWidth } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer, fillCircle, strokeCircle, fillRect } from "./helpers";
 import type { ImageBuffer } from "@/types";
 
@@ -13,7 +13,7 @@ function makeCodeLikeBuffer(size: number, rings: number): ImageBuffer {
   fillCircle(buf, cx, cy, ringWidth * 0.7, 0, 0, 0);
 
   for (let r = 1; r < rings; r++) {
-    const radius = getRingRadius(r, rings, size);
+    const radius = getExactRingRadius(r, rings, size, 48);
     const segs = 16;
     for (let s = 0; s < segs; s++) {
       if (s % 2 === 0) {

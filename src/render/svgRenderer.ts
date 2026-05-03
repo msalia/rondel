@@ -1,9 +1,10 @@
 import type { EncodedCode } from "@/types";
 
 import {
+  GAP_FRACTION,
+  getExactRingRadius,
   getOrientationArcs,
   getOrientationRingRadius,
-  getRingRadius,
   getRingWidth,
   getSegmentAngle,
   getSegmentsForRing,
@@ -13,7 +14,6 @@ import {
 const DEFAULT_SIZE = 300;
 const DEFAULT_PRIMARY = "#000000";
 const DEFAULT_SECONDARY = "#d0d0d0";
-const GAP_FRACTION = 0.3;
 const STROKE_WIDTH_RATIO = 0.5;
 const CENTER_RADIUS_RATIO = 0.75;
 const SECONDARY_SEPARATION = 1;
@@ -46,7 +46,7 @@ export function renderSVG(code: EncodedCode, opts: SVGRenderOptions | number = {
   for (let r = 0; r < rings; r++) {
     const segs = getSegmentsForRing(r, rings, segmentsPerRing);
     const segAngle = (2 * Math.PI) / segs;
-    const radius = getRingRadius(r, rings, size);
+    const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
     if (!isDataRing(r)) continue;
 
     const ringBits: number[] = [];
@@ -138,7 +138,7 @@ export function renderSVG(code: EncodedCode, opts: SVGRenderOptions | number = {
   let orientationPaths = "";
   const orientationRadius = getOrientationRingRadius(rings, size);
   const orientationStroke = ringWidth * STROKE_WIDTH_RATIO;
-  for (const arc of getOrientationArcs()) {
+  for (const arc of getOrientationArcs(rings, size, segmentsPerRing)) {
     const sweep = arc.end - arc.start;
     const largeArc = sweep > Math.PI ? 1 : 0;
     const x1 = cx + orientationRadius * Math.cos(arc.start);
