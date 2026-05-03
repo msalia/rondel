@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { encode } from "@/core/encoder";
+import { DEFAULT_CODE_SIZE, DEFAULT_ECC_BYTES, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getRingWidth, getSegmentsForRing, isDataRing } from "@/core/layout";
 import { renderSVG } from "@/render/svgRenderer";
 
 describe("renderSVG", () => {
-  const code = encode("hello", { rings: 5, segmentsPerRing: 48, eccBytes: 4 });
+  const code = encode("hello", { rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING, eccBytes: DEFAULT_ECC_BYTES });
 
   it("returns valid SVG string", () => {
     const svg = renderSVG(code);
@@ -34,14 +35,14 @@ describe("renderSVG", () => {
   it("does not render arcs for the non-data inner ring", () => {
     const svg = renderSVG(code, { size: 300, primary: "#000", secondary: "#ccc" });
     const { rings } = code;
-    const innerRingRadius = getRingWidth(rings, 300);
+    const innerRingRadius = getRingWidth(rings, DEFAULT_CODE_SIZE);
     const pathRadii = [...svg.matchAll(/A (\d+\.?\d*) /g)].map((m) => parseFloat(m[1]));
     expect(pathRadii).not.toContain(innerRingRadius);
   });
 
   it("renders paths for each data ring", () => {
     const { rings } = code;
-    const svg = renderSVG(code, { size: 300 });
+    const svg = renderSVG(code, { size: DEFAULT_CODE_SIZE });
     const primaryGroup = svg.split('stroke="#000000"')[1]?.split("</g>")[0] || "";
     const secondaryGroup = svg.split('stroke="#d0d0d0"')[1]?.split("</g>")[0] || "";
     const allPaths = (primaryGroup.match(/<path/g) || []).length + (secondaryGroup.match(/<path/g) || []).length;
@@ -51,17 +52,17 @@ describe("renderSVG", () => {
   });
 
   it("merges consecutive 1-bits into single arcs", () => {
-    const allOnes = { bits: new Array(200).fill(1), rings: 5, segmentsPerRing: 48 };
+    const allOnes = { bits: new Array(200).fill(1), rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING };
     const svg = renderSVG(allOnes);
     const primaryGroup = svg.split('stroke="#000000"')[1]?.split("</g>")[0] || "";
     const pathCount = (primaryGroup.match(/<path/g) || []).length;
     let dataRingCount = 0;
-    for (let r = 0; r < 5; r++) if (isDataRing(r)) dataRingCount++;
+    for (let r = 0; r < DEFAULT_RINGS; r++) if (isDataRing(r)) dataRingCount++;
     expect(pathCount).toBe(dataRingCount);
   });
 
   it("renders both primary and secondary arcs for mixed data", () => {
-    const svg = renderSVG(code, { size: 300 });
+    const svg = renderSVG(code, { size: DEFAULT_CODE_SIZE });
     const secondaryGroup = svg.split('stroke="#d0d0d0"')[1]?.split("</g>")[0] || "";
     const primaryGroup = svg.split('stroke="#000000"')[1]?.split("</g>")[0] || "";
     expect(secondaryGroup).toContain("<path");
@@ -69,8 +70,8 @@ describe("renderSVG", () => {
   });
 
   it("all-zero bits produce only secondary arcs, no primary", () => {
-    const allZeros = { bits: new Array(200).fill(0), rings: 5, segmentsPerRing: 48 };
-    const svg = renderSVG(allZeros, { size: 300 });
+    const allZeros = { bits: new Array(200).fill(0), rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING };
+    const svg = renderSVG(allZeros, { size: DEFAULT_CODE_SIZE });
     const secondaryGroup = svg.split('stroke="#d0d0d0"')[1]?.split("</g>")[0] || "";
     const primaryGroup = svg.split('stroke="#000000"')[1]?.split("</g>")[0] || "";
     expect(secondaryGroup).toContain("<path");
@@ -84,7 +85,7 @@ describe("renderSVG", () => {
 
   describe("orientation ring", () => {
     it("renders 6 orientation arc paths (3 timing + 3 orientation)", () => {
-      const svg = renderSVG(code, { size: 300 });
+      const svg = renderSVG(code, { size: DEFAULT_CODE_SIZE });
       const groups = svg.split('<g stroke="#000000"');
       const orientationGroup = groups[groups.length - 1].split("</g>")[0];
       const pathCount = (orientationGroup.match(/<path/g) || []).length;
@@ -98,18 +99,18 @@ describe("renderSVG", () => {
     });
 
     it("orientation arcs are at a larger radius than data rings", () => {
-      const svg = renderSVG(code, { size: 300 });
+      const svg = renderSVG(code, { size: DEFAULT_CODE_SIZE });
       const { rings } = code;
       const allRadii = [...svg.matchAll(/A (\d+\.?\d*) \1/g)].map((m) => parseFloat(m[1]));
-      const maxDataRadius = (rings) * getRingWidth(rings, 300);
+      const maxDataRadius = (rings) * getRingWidth(rings, DEFAULT_CODE_SIZE);
       const orientationRadii = allRadii.filter((r) => r > maxDataRadius);
       expect(orientationRadii.length).toBe(6);
     });
 
     it("orientation ring is present for all ring counts", () => {
       for (const rings of [3, 4, 5, 6]) {
-        const c = encode("test", { rings, segmentsPerRing: 48, eccBytes: 4 });
-        const svg = renderSVG(c, { size: 300 });
+        const c = encode("ab", { rings, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING, eccBytes: 2 });
+        const svg = renderSVG(c, { size: DEFAULT_CODE_SIZE });
         const groups = svg.split('<g stroke="#000000"');
         const lastGroup = groups[groups.length - 1].split("</g>")[0];
         expect((lastGroup.match(/<path/g) || []).length).toBe(6);

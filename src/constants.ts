@@ -5,7 +5,7 @@ export const DEFAULT_RINGS = 5;
 export const DEFAULT_SEGMENTS_PER_RING = 48;
 
 /** Default number of Reed-Solomon error correction bytes. */
-export const DEFAULT_ECC_BYTES = 16;
+export const DEFAULT_ECC_BYTES = 4;
 
 /** Default output size (pixels) for rectified/rendered images. */
 export const DEFAULT_CODE_SIZE = 300;

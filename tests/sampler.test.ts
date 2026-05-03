@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { samplePolarGrid } from "@/scan/sampler";
+import { DEFAULT_CODE_SIZE, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getExactRingRadius, getSegmentsForRing, getTotalSegments, isDataRing } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer, makeGrayBuffer, fillCircle } from "./helpers";
 import type { ImageBuffer } from "@/types";
+
+const R = DEFAULT_RINGS;
+const S = DEFAULT_SEGMENTS_PER_RING;
+const SZ = DEFAULT_CODE_SIZE;
 
 function makeHalfBuffer(size: number): ImageBuffer {
   const buf = makeWhiteBuffer(size);
@@ -19,15 +24,15 @@ function makeHalfBuffer(size: number): ImageBuffer {
 
 describe("samplePolarGrid", () => {
   it("returns correct number of bits for data rings", () => {
-    const buf = makeWhiteBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48);
-    expect(bits.length).toBe(getTotalSegments(5, 48));
+    const buf = makeWhiteBuffer(SZ);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S);
+    expect(bits.length).toBe(getTotalSegments(R, S));
   });
 
   it("excludes ring 0 from the bit count", () => {
     const rings = 5;
     const segs = 48;
-    const buf = makeWhiteBuffer(300);
+    const buf = makeWhiteBuffer(SZ);
     const bits = samplePolarGrid(buf, 150, 150, 300, rings, segs);
     const ring0Segs = getSegmentsForRing(0, rings, segs);
     let totalIncludingRing0 = 0;
@@ -36,20 +41,20 @@ describe("samplePolarGrid", () => {
   });
 
   it("samples all 0 for a white buffer", () => {
-    const buf = makeWhiteBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48);
+    const buf = makeWhiteBuffer(SZ);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S);
     expect(bits.every((b) => b === 0)).toBe(true);
   });
 
   it("samples all 1 for a black buffer", () => {
-    const buf = makeBlackBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48);
+    const buf = makeBlackBuffer(SZ);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S);
     expect(bits.every((b) => b === 1)).toBe(true);
   });
 
   it("produces a mix of 0 and 1 on a half-black half-white buffer", () => {
     const buf = makeHalfBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S);
     const ones = bits.filter((b) => b === 1).length;
     const zeros = bits.filter((b) => b === 0).length;
     expect(ones).toBeGreaterThan(0);
@@ -58,8 +63,8 @@ describe("samplePolarGrid", () => {
 
   it("orientationOffset shifts which bits are sampled", () => {
     const buf = makeHalfBuffer(300);
-    const bits0 = samplePolarGrid(buf, 150, 150, 300, 5, 48, 0);
-    const bitsOffset = samplePolarGrid(buf, 150, 150, 300, 5, 48, Math.PI);
+    const bits0 = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, 0);
+    const bitsOffset = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, Math.PI);
     let differences = 0;
     for (let i = 0; i < bits0.length; i++) {
       if (bits0[i] !== bitsOffset[i]) differences++;
@@ -94,20 +99,20 @@ describe("samplePolarGrid", () => {
   it("handles out-of-bounds samples gracefully", () => {
     const buf = makeWhiteBuffer(100);
     const bits = samplePolarGrid(buf, 50, 50, 300, 5, 48);
-    expect(bits.length).toBe(getTotalSegments(5, 48));
+    expect(bits.length).toBe(getTotalSegments(R, S));
     expect(bits.every((b) => b === 0 || b === 1)).toBe(true);
   });
 
   it("only contains 0 or 1 values for gray input", () => {
-    const buf = makeGrayBuffer(300, 128);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48);
+    const buf = makeGrayBuffer(SZ, 128);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S);
     for (const b of bits) {
       expect(b === 0 || b === 1).toBe(true);
     }
   });
 
   it("segment count per ring matches layout", () => {
-    const buf = makeWhiteBuffer(300);
+    const buf = makeWhiteBuffer(SZ);
     const rings = 5;
     const segs = 48;
     const bits = samplePolarGrid(buf, 150, 150, 300, rings, segs);
@@ -120,22 +125,22 @@ describe("samplePolarGrid", () => {
 
   it("inverted flag flips bit sense on a half buffer", () => {
     const buf = makeHalfBuffer(300);
-    const normal = samplePolarGrid(buf, 150, 150, 300, 5, 48, 0, false);
-    const inverted = samplePolarGrid(buf, 150, 150, 300, 5, 48, 0, true);
+    const normal = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, 0, false);
+    const inverted = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, 0, true);
     for (let i = 0; i < normal.length; i++) {
       expect(inverted[i]).toBe(1 - normal[i]);
     }
   });
 
   it("inverted samples all 0 for a black buffer", () => {
-    const buf = makeBlackBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48, 0, true);
+    const buf = makeBlackBuffer(SZ);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, 0, true);
     expect(bits.every((b) => b === 0)).toBe(true);
   });
 
   it("inverted samples all 1 for a white buffer", () => {
-    const buf = makeWhiteBuffer(300);
-    const bits = samplePolarGrid(buf, 150, 150, 300, 5, 48, 0, true);
+    const buf = makeWhiteBuffer(SZ);
+    const bits = samplePolarGrid(buf, SZ/2, SZ/2, SZ, R, S, 0, true);
     expect(bits.every((b) => b === 1)).toBe(true);
   });
 });

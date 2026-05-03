@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { validateCircularCode } from "@/scan/validator";
+import { DEFAULT_CODE_SIZE, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getExactRingRadius, getRingWidth } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer, fillCircle, strokeCircle, fillRect } from "./helpers";
 import type { ImageBuffer } from "@/types";
+
+const R = DEFAULT_RINGS;
+const S = DEFAULT_SEGMENTS_PER_RING;
+const SZ = DEFAULT_CODE_SIZE;
 
 function makeCodeLikeBuffer(size: number, rings: number): ImageBuffer {
   const buf = makeWhiteBuffer(size);
@@ -13,7 +18,7 @@ function makeCodeLikeBuffer(size: number, rings: number): ImageBuffer {
   fillCircle(buf, cx, cy, ringWidth * 0.7, 0, 0, 0);
 
   for (let r = 1; r < rings; r++) {
-    const radius = getExactRingRadius(r, rings, size, 48);
+    const radius = getExactRingRadius(r, rings, size, S);
     const segs = 16;
     for (let s = 0; s < segs; s++) {
       if (s % 2 === 0) {
@@ -46,8 +51,8 @@ function makeCodeLikeBuffer(size: number, rings: number): ImageBuffer {
 
 describe("validateCircularCode", () => {
   it("blank white buffer is not a valid code", () => {
-    const buf = makeWhiteBuffer(300);
-    const result = validateCircularCode(buf, 5, 300);
+    const buf = makeWhiteBuffer(SZ);
+    const result = validateCircularCode(buf, R, SZ);
     expect(result.valid).toBe(false);
     expect(result.centerDot).toBe(false);
     expect(result.ringContrast).toBe(false);
@@ -55,57 +60,57 @@ describe("validateCircularCode", () => {
   });
 
   it("blank black buffer is not a valid code", () => {
-    const buf = makeBlackBuffer(300);
-    const result = validateCircularCode(buf, 5, 300);
+    const buf = makeBlackBuffer(SZ);
+    const result = validateCircularCode(buf, R, SZ);
     expect(result.valid).toBe(false);
   });
 
   it("center dot check detects dark center on light background", () => {
-    const buf = makeWhiteBuffer(300);
-    fillCircle(buf, 150, 150, 15, 0, 0, 0);
-    const result = validateCircularCode(buf, 5, 300);
+    const buf = makeWhiteBuffer(SZ);
+    fillCircle(buf, SZ/2, SZ/2, 15, 0, 0, 0);
+    const result = validateCircularCode(buf, R, SZ);
     expect(result.centerDot).toBe(true);
   });
 
   it("center dot check fails for light center", () => {
-    const buf = makeWhiteBuffer(300);
-    const result = validateCircularCode(buf, 5, 300);
+    const buf = makeWhiteBuffer(SZ);
+    const result = validateCircularCode(buf, R, SZ);
     expect(result.centerDot).toBe(false);
   });
 
   it("code-like pattern passes validation", () => {
-    const buf = makeCodeLikeBuffer(300, 5);
-    const result = validateCircularCode(buf, 5, 300);
+    const buf = makeCodeLikeBuffer(SZ, R);
+    const result = validateCircularCode(buf, R, SZ);
     expect(result.centerDot).toBe(true);
     expect(result.score).toBeGreaterThan(0.3);
   });
 
   it("score is between 0 and 1", () => {
-    for (const buf of [makeWhiteBuffer(300), makeBlackBuffer(300), makeCodeLikeBuffer(300, 5)]) {
-      const result = validateCircularCode(buf, 5, 300);
+    for (const buf of [makeWhiteBuffer(SZ), makeBlackBuffer(SZ), makeCodeLikeBuffer(SZ, R)]) {
+      const result = validateCircularCode(buf, R, SZ);
       expect(result.score).toBeGreaterThanOrEqual(0);
       expect(result.score).toBeLessThanOrEqual(1);
     }
   });
 
   it("threshold 0 always passes", () => {
-    const buf = makeWhiteBuffer(300);
-    const result = validateCircularCode(buf, 5, 300, 0.0);
+    const buf = makeWhiteBuffer(SZ);
+    const result = validateCircularCode(buf, R, SZ, 0.0);
     expect(result.valid).toBe(true);
   });
 
   it("threshold 1 fails for non-perfect codes", () => {
-    const buf = makeWhiteBuffer(300);
-    fillCircle(buf, 150, 150, 15, 0, 0, 0);
-    const result = validateCircularCode(buf, 5, 300, 1.0);
+    const buf = makeWhiteBuffer(SZ);
+    fillCircle(buf, SZ/2, SZ/2, 15, 0, 0, 0);
+    const result = validateCircularCode(buf, R, SZ, 1.0);
     expect(result.valid).toBe(false);
   });
 
   it("different ring counts produce different scoring behavior", () => {
-    const buf3 = makeCodeLikeBuffer(300, 3);
-    const buf6 = makeCodeLikeBuffer(300, 6);
-    const r3 = validateCircularCode(buf3, 3, 300);
-    const r6 = validateCircularCode(buf6, 6, 300);
+    const buf3 = makeCodeLikeBuffer(SZ, 3);
+    const buf6 = makeCodeLikeBuffer(SZ, 6);
+    const r3 = validateCircularCode(buf3, 3, SZ);
+    const r6 = validateCircularCode(buf6, 6, SZ);
     expect(r3.centerDot).toBe(true);
     expect(r6.centerDot).toBe(true);
   });

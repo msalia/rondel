@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { analyzeOrientation } from "@/scan/orientationAnalyzer";
+import { DEFAULT_CODE_SIZE, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getOrientationArcs, getOrientationRingRadius, getRingWidth } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer } from "./helpers";
 import type { ImageBuffer } from "@/types";
 
-const BASE_SEGMENTS = 48;
+const BASE_SEGMENTS = DEFAULT_SEGMENTS_PER_RING;
 
 function drawOrientationRing(
   buf: ImageBuffer,
@@ -51,8 +52,8 @@ function drawOrientationRing(
 }
 
 describe("analyzeOrientation", () => {
-  const rings = 5;
-  const size = 300;
+  const rings = DEFAULT_RINGS;
+  const size = DEFAULT_CODE_SIZE;
 
   it("returns OrientationAnalysis shape", () => {
     const buf = makeWhiteBuffer(size);

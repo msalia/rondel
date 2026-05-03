@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { encode } from "@/core/encoder";
 import { decode } from "@/core/decoder";
+import { DEFAULT_ECC_BYTES, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import { getSegmentsForRing, getTotalSegments, isDataRing } from "@/core/layout";
 
 describe("render consistency", () => {
   it("encoder produces bits that fit in the grid", () => {
-    const code = encode("hello", { rings: 5, segmentsPerRing: 48, eccBytes: 4 });
+    const code = encode("hello", { rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING, eccBytes: DEFAULT_ECC_BYTES });
     const totalSlots = getTotalSegments(code.rings, code.segmentsPerRing);
     expect(code.bits.length).toBeLessThanOrEqual(totalSlots);
   });
@@ -13,7 +14,7 @@ describe("render consistency", () => {
   it("bit consumption order matches layout for multiple configs", () => {
     const configs = [
       { rings: 3, segmentsPerRing: 32 },
-      { rings: 5, segmentsPerRing: 48 },
+      { rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING },
       { rings: 6, segmentsPerRing: 64 },
     ];
 
@@ -29,8 +30,8 @@ describe("render consistency", () => {
   });
 
   it("non-data ring segments are not counted in total", () => {
-    const rings = 5;
-    const base = 48;
+    const rings = DEFAULT_RINGS;
+    const base = DEFAULT_SEGMENTS_PER_RING;
     const ring0Segs = getSegmentsForRing(0, rings, base);
     const total = getTotalSegments(rings, base);
 
@@ -43,8 +44,8 @@ describe("render consistency", () => {
   });
 
   it("inner rings always have fewer or equal segments to outer rings", () => {
-    for (const base of [32, 48, 64]) {
-      for (const rings of [3, 5, 8]) {
+    for (const base of [32, DEFAULT_SEGMENTS_PER_RING, 64]) {
+      for (const rings of [3, DEFAULT_RINGS, 8]) {
         for (let r = 1; r < rings; r++) {
           const prev = getSegmentsForRing(r - 1, rings, base);
           const curr = getSegmentsForRing(r, rings, base);
@@ -57,8 +58,8 @@ describe("render consistency", () => {
   it("encode/decode roundtrip works with adaptive segments", () => {
     const configs = [
       { rings: 3, segmentsPerRing: 32, eccBytes: 2, input: "ab" },
-      { rings: 5, segmentsPerRing: 48, eccBytes: 4, input: "test" },
-      { rings: 6, segmentsPerRing: 64, eccBytes: 4, input: "test" },
+      { rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING, eccBytes: DEFAULT_ECC_BYTES, input: "test" },
+      { rings: 6, segmentsPerRing: 64, eccBytes: DEFAULT_ECC_BYTES, input: "test" },
     ];
 
     for (const { input, ...cfg } of configs) {

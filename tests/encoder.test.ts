@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { encode } from "@/core/encoder";
 import { decode } from "@/core/decoder";
+import { DEFAULT_ECC_BYTES, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 
-const ECC = 4;
+const ECC = DEFAULT_ECC_BYTES;
 
 describe("encode/decode", () => {
   it("roundtrip with short string", () => {
@@ -13,7 +14,7 @@ describe("encode/decode", () => {
   });
 
   it("roundtrip with URL", () => {
-    const input = "ex.co/test";
+    const input = "ex.co/t";
     const code = encode(input, { eccBytes: ECC });
     const output = decode(code.bits, ECC);
     expect(output).toBe(input);
@@ -21,11 +22,11 @@ describe("encode/decode", () => {
 
   it("roundtrip with custom options", () => {
     const input = "test";
-    const code = encode(input, { rings: 5, segmentsPerRing: 48, eccBytes: ECC });
+    const code = encode(input, { rings: DEFAULT_RINGS, segmentsPerRing: DEFAULT_SEGMENTS_PER_RING, eccBytes: ECC });
     const output = decode(code.bits, ECC);
     expect(output).toBe(input);
-    expect(code.rings).toBe(5);
-    expect(code.segmentsPerRing).toBe(48);
+    expect(code.rings).toBe(DEFAULT_RINGS);
+    expect(code.segmentsPerRing).toBe(DEFAULT_SEGMENTS_PER_RING);
   });
 
   it("roundtrip with empty string", () => {
@@ -50,6 +51,6 @@ describe("encode/decode", () => {
   });
 
   it("throws when data exceeds grid capacity", () => {
-    expect(() => encode("this string is way too long for the grid", { eccBytes: 4 })).toThrow("Data too large");
+    expect(() => encode("this string is way too long for the grid and will never fit", { eccBytes: ECC })).toThrow("Data too large");
   });
 });

@@ -30,14 +30,13 @@ async function scanFromRenderedSVG(
   const code = encode(input, { rings, segmentsPerRing, eccBytes });
 
   const svgSize = 400;
+  const codeSize = 300;
   const svg = renderSVG(code, { size: svgSize, primary: colors.primary, secondary: colors.secondary });
 
   const codeRenderSize = svgSize;
   const captureSize = Math.round(codeRenderSize * 1.6);
   const pad = (captureSize - codeRenderSize) / 2;
-  const codeSize = 300;
 
-  // Rasterize SVG into a padded capture canvas (matches app.ts scanFromImage)
   const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
   const img = await loadImage(dataUrl);
   const captureCanvas = createCanvas(captureSize, captureSize);
@@ -53,13 +52,10 @@ async function scanFromRenderedSVG(
     height: captureSize,
   };
 
-  // Warp to rectified image
   const r = codeRenderSize / (2 * 1.15);
   const corners = estimateCircleCorners(captureSize / 2, captureSize / 2, r, 1.15);
   const rectified = warpPerspective(captured, corners, codeSize);
 
-  // Sample bits directly at known center and zero orientation
-  // (avoids center-refine / orientation-detect differences across SVG renderers)
   const sampled = samplePolarGrid(
     rectified, codeSize / 2, codeSize / 2, codeSize,
     rings, segmentsPerRing, 0, colors.inverted,
@@ -115,6 +111,7 @@ async function scanViaFullPipeline(
 ) {
   const code = encode(input, { rings, segmentsPerRing, eccBytes });
   const svgSize = 400;
+  const codeSize = 300;
   const svg = renderSVG(code, { size: svgSize, primary: colors.primary, secondary: colors.secondary });
 
   const codeRenderSize = svgSize;

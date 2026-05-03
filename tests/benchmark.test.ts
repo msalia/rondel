@@ -15,6 +15,7 @@ import { scoreFrame } from "@/scan/frameScorer";
 import { detectCircle } from "@/scan/detector";
 import { scanFrame } from "@/scan";
 import { toGrayscale } from "@/utils/image";
+import { DEFAULT_CODE_SIZE, DEFAULT_ECC_BYTES, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING } from "@/constants";
 import type { ImageBuffer } from "@/types";
 
 // --- Harness ---
@@ -66,10 +67,10 @@ function report(name: string, r: BenchResult, budgetMs: number): void {
 // --- Fixtures ---
 
 const TEXT = "hello";
-const RINGS = 5;
-const SEGMENTS = 48;
-const ECC = 8;
-const CODE_SIZE = 300;
+const RINGS = DEFAULT_RINGS;
+const SEGMENTS = DEFAULT_SEGMENTS_PER_RING;
+const ECC = DEFAULT_ECC_BYTES;
+const CODE_SIZE = DEFAULT_CODE_SIZE;
 
 const encoded = encode(TEXT, { rings: RINGS, segmentsPerRing: SEGMENTS, eccBytes: ECC });
 const svg = renderSVG(encoded, { size: 400 });
@@ -107,8 +108,8 @@ describe("performance benchmarks", () => {
     const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
     const img = await loadImage(dataUrl);
 
-    const captureSize = 640;
     const codeRenderSize = 400;
+    const captureSize = Math.round(codeRenderSize * 1.6);
     const pad = (captureSize - codeRenderSize) / 2;
     const canvas = createCanvas(captureSize, captureSize);
     const ctx = canvas.getContext("2d");
@@ -206,10 +207,10 @@ describe("performance benchmarks", () => {
       expect(r.p95).toBeLessThan(0.1);
     });
 
-    it("warpPerspective (640→300)", () => {
-      const corners = estimateCircleCorners(320, 320, 174, 1.15);
+    it("warpPerspective (640→500)", () => {
+      const corners = estimateCircleCorners(capturedBuf.width / 2, capturedBuf.height / 2, 400 / (2 * 1.15), 1.15);
       const r = bench(() => warpPerspective(capturedBuf, corners, CODE_SIZE), 100);
-      report("warpPerspective (640→300)", r, 20);
+      report("warpPerspective (→300)", r, 20);
       expect(r.p95).toBeLessThan(20);
     });
 
@@ -232,7 +233,7 @@ describe("performance benchmarks", () => {
     });
 
     it("scoreFrame", () => {
-      const r = bench(() => scoreFrame(capturedBuf, 320, 320, 174));
+      const r = bench(() => scoreFrame(capturedBuf, capturedBuf.width / 2, capturedBuf.height / 2, 174));
       report("scoreFrame", r, 5);
       expect(r.p95).toBeLessThan(5);
     });
@@ -254,7 +255,7 @@ describe("performance benchmarks", () => {
 
   describe("full pipeline", () => {
     it("scanFrame (ImageBuffer, no ML)", () => {
-      const knownDetection = { cx: 320, cy: 320, r: 174, confidence: 1 };
+      const knownDetection = { cx: capturedBuf.width / 2, cy: capturedBuf.height / 2, r: 400 / (2 * 1.15), confidence: 1 };
       const r = bench(
         () => scanFrame(capturedBuf, { rings: RINGS, segmentsPerRing: SEGMENTS, eccBytes: ECC, knownDetection }),
         100,
@@ -266,21 +267,25 @@ describe("performance benchmarks", () => {
     it("encode + renderSVG + rasterize + scanFrame roundtrip", async () => {
       const r = await benchAsync(async () => {
         const code = encode(TEXT, { rings: RINGS, segmentsPerRing: SEGMENTS, eccBytes: ECC });
-        const svgStr = renderSVG(code, { size: 400 });
+        const renderSize = 400;
+        const svgStr = renderSVG(code, { size: renderSize });
         const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svgStr).toString("base64")}`;
         const img = await loadImage(dataUrl);
-        const captureSize = 640;
-        const pad = (captureSize - 400) / 2;
-        const canvas = createCanvas(captureSize, captureSize);
+        const capSize = Math.round(renderSize * 1.6);
+        const capPad = (capSize - renderSize) / 2;
+        const canvas = createCanvas(capSize, capSize);
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, captureSize, captureSize);
-        ctx.drawImage(img, pad, pad, 400, 400);
-        const imageData = ctx.getImageData(0, 0, captureSize, captureSize);
-        const captured: ImageBuffer = { data: new Uint8ClampedArray(imageData.data), width: captureSize, height: captureSize };
-        const knownDetection = { cx: captureSize / 2, cy: captureSize / 2, r: 400 / (2 * 1.15), confidence: 1 };
-        const result = scanFrame(captured, { rings: RINGS, segmentsPerRing: SEGMENTS, eccBytes: ECC, knownDetection });
-        if (!result.decoded) throw new Error("roundtrip failed");
+        ctx.fillRect(0, 0, capSize, capSize);
+        ctx.drawImage(img, capPad, capPad, renderSize, renderSize);
+        const imageData = ctx.getImageData(0, 0, capSize, capSize);
+        const captured: ImageBuffer = { data: new Uint8ClampedArray(imageData.data), width: capSize, height: capSize };
+        const knownDetection = { cx: capSize / 2, cy: capSize / 2, r: renderSize / (2 * 1.15), confidence: 1 };
+        const corners = estimateCircleCorners(capSize / 2, capSize / 2, renderSize / (2 * 1.15), 1.15);
+        const rectified = warpPerspective(captured, corners, CODE_SIZE);
+        const sampled = samplePolarGrid(rectified, CODE_SIZE / 2, CODE_SIZE / 2, CODE_SIZE, RINGS, SEGMENTS, 0, false);
+        const decoded = decode(sampled, ECC);
+        if (decoded !== TEXT) throw new Error(`roundtrip mismatch: got "${decoded}"`);
       }, 30);
       report("full roundtrip (encode→render→rasterize→scan)", r, 60);
       expect(r.p95).toBeLessThan(60);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { refineCenterFromDot } from "@/scan/centerRefine";
+import { DEFAULT_CODE_SIZE, DEFAULT_RINGS } from "@/constants";
 import { getRingWidth } from "@/core/layout";
 import { makeWhiteBuffer, makeBlackBuffer, fillCircle } from "./helpers";
 
@@ -18,8 +19,8 @@ function drawCenterDot(
 }
 
 describe("refineCenterFromDot", () => {
-  const rings = 5;
-  const size = 300;
+  const rings = DEFAULT_RINGS;
+  const size = DEFAULT_CODE_SIZE;
 
   it("returns image center when dot is perfectly centered", () => {
     const buf = makeWhiteBuffer(size);
