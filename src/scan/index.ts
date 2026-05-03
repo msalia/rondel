@@ -1,12 +1,15 @@
-import type { OrientationAnalysis } from "@/scan/orientationAnalyzer";
-import type { ValidationResult } from "@/scan/validator";
 import type {
   DetectionResult,
   FrameScore,
   ImageBuffer,
+  OrientationAnalysis,
   Point,
+  RectifyResult,
+  ScanFrameOptions,
+  ScanFrameResult,
   ScanOptions,
   ScanResult,
+  ValidationResult,
 } from "@/types";
 
 import {
@@ -32,32 +35,8 @@ import { analyzeOrientation } from "@/scan/orientationAnalyzer";
 import { estimateCircleCorners, warpPerspective } from "@/scan/perspective";
 import { samplePolarGrid } from "@/scan/sampler";
 import { validateCircularCode } from "@/scan/validator";
-import { canvasToBuffer, captureFrameToBuffer, flipBufferHorizontal } from "@/utils/image";
+import { canvasToBuffer, captureFrameToBuffer, flipBufferHorizontal, toGrayscale } from "@/utils/image";
 
-/** Options for processing a single scan frame. */
-export type ScanFrameOptions = {
-  rings?: number;
-  segmentsPerRing?: number;
-  eccBytes?: number;
-  captureSize?: number;
-  codeSize?: number;
-  knownDetection?: DetectionResult;
-};
-
-/** Full result from scanning a single frame including detection, orientation, bits, and validation. */
-export type ScanFrameResult = {
-  detected: boolean;
-  decoded: string | null;
-  error: string | null;
-  detection: DetectionResult;
-  orientation: OrientationAnalysis;
-  corners: Point[];
-  warped: ImageBuffer;
-  rectified: ImageBuffer;
-  bits: number[];
-  validation: ValidationResult;
-  frameScore: FrameScore;
-};
 
 /** Detects a circular code in an image buffer using ML or Hough fallback. */
 export function detectCode(buf: ImageBuffer): DetectionResult {
@@ -101,14 +80,6 @@ export function flipHorizontal(buf: ImageBuffer): ImageBuffer {
   return flipBufferHorizontal(buf);
 }
 
-/** Result of rectifying a detected code region. */
-export type RectifyResult = {
-  image: ImageBuffer;
-  corners: Point[];
-  validation: ValidationResult;
-  orientation: OrientationAnalysis;
-  center: { cx: number; cy: number };
-};
 
 /** Warps, de-reflects, validates, and analyzes orientation of a detected code. */
 export function rectifyCode(
@@ -120,11 +91,12 @@ export function rectifyCode(
 ): RectifyResult {
   const corners = resolveCorners(detection);
   const rectified = warpPerspective(frame, corners, outputSize);
+  const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
 
-  const center = refineCenterFromDot(rectified, rings, outputSize);
-  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy, segmentsPerRing);
+  const center = refineCenterFromDot(rectified, rings, outputSize, gray);
+  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy, segmentsPerRing, gray);
 
-  const validation = validateCircularCode(rectified, rings, outputSize, CONFIDENCE_THRESHOLD, segmentsPerRing);
+  const validation = validateCircularCode(rectified, rings, outputSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
 
   return { image: rectified, corners, validation, orientation, center };
 }
@@ -162,11 +134,12 @@ export function scanFrame(
   const warped = warpPerspective(captured, corners, codeSize);
 
   const rectified = warped;
-  const center = refineCenterFromDot(rectified, rings, codeSize);
+  const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
+  const center = refineCenterFromDot(rectified, rings, codeSize, gray);
 
-  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing);
+  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing, gray);
 
-  const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing);
+  const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
   const frameScoreResult = scoreFrame(
     captured,
     activeDetection.cx,

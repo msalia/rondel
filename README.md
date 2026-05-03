@@ -379,6 +379,51 @@ npx vitest run tests/model.test.ts
 npm run example  # browser demo
 ```
 
+## Performance
+
+Benchmarks measured on Apple M-series, Node.js, single-threaded. Run with `npx vitest run tests/benchmark.test.ts`. Each benchmark has a p95 budget that fails CI if exceeded.
+
+### Encoding Pipeline
+
+| Operation | p50 | p95 | ops/s |
+|-----------|-----|-----|-------|
+| `encode` (string → bits) | 0.01ms | 0.02ms | 85,000+ |
+| `rsEncode` (payload → codeword) | <0.01ms | 0.01ms | 270,000+ |
+| `rsDecode` (no errors) | 0.01ms | 0.01ms | 180,000+ |
+| `rsDecode` (2 byte errors) | 0.03ms | 0.07ms | 38,000+ |
+| `decode` (bits → string) | 0.01ms | 0.01ms | 116,000+ |
+| `bytesToBits` / `bitsToBytes` | <0.01ms | <0.01ms | 350,000+ |
+
+### Rendering
+
+| Operation | p50 | p95 | ops/s |
+|-----------|-----|-----|-------|
+| `renderSVG` (300px) | 0.03ms | 0.04ms | 39,000+ |
+| `renderSVG` (600px) | 0.02ms | 0.03ms | 46,000+ |
+
+### Scan Pipeline Components
+
+| Operation | p50 | p95 | ops/s |
+|-----------|-----|-----|-------|
+| `toGrayscale` (300x300) | 0.25ms | 0.27ms | 4,000+ |
+| `solveHomography` | 0.02ms | 0.02ms | 59,000+ |
+| `warpPerspective` (640→300) | 1.9ms | 2.1ms | 530+ |
+| `refineCenterFromDot` | 0.27ms | 0.28ms | 3,700+ |
+| `analyzeOrientation` | 0.86ms | 0.97ms | 1,160+ |
+| `validateCircularCode` | 0.27ms | 0.29ms | 3,700+ |
+| `scoreFrame` | 0.52ms | 0.64ms | 1,900+ |
+| `samplePolarGrid` | 0.08ms | 0.16ms | 13,000+ |
+| `detectCircle` (Hough, 320px) | 6.6ms | 10.1ms | 150+ |
+
+### End-to-End
+
+| Operation | p50 | p95 | ops/s |
+|-----------|-----|-----|-------|
+| `scanFrame` (known detection) | 3.5ms | 4.4ms | 287 |
+| Full roundtrip (encode→render→rasterize→scan) | 5.5ms | 7.6ms | 181 |
+
+The scan pipeline bottleneck is `warpPerspective` (bilinear interpolation over 90K pixels). With known detection (skipping Hough), the full decode runs at ~280 fps — well above the 30 fps camera rate.
+
 ## API Reference
 
 ### Encoding

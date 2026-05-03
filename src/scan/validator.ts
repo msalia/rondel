@@ -1,16 +1,9 @@
-import type { ImageBuffer } from "@/types";
+import type { ImageBuffer, ValidationResult } from "@/types";
 
 import { getExactRingRadius, getRingWidth } from "@/core/layout";
-import { toGrayscale } from "@/utils/image";
+import { sampleGray, toGrayscale } from "@/utils/image";
 
-/** Result of validating whether an image contains a circular code. */
-export type ValidationResult = {
-  valid: boolean;
-  centerDot: boolean;
-  ringContrast: boolean;
-  segmentPattern: boolean;
-  score: number;
-};
+export type { ValidationResult };
 
 /** Validates whether a rectified image looks like a circular code. */
 export function validateCircularCode(
@@ -19,9 +12,10 @@ export function validateCircularCode(
   size: number,
   threshold = 0.5,
   segmentsPerRing = 48,
+  precomputedGray?: Uint8Array,
 ): ValidationResult {
   const { data, width, height } = buf;
-  const gray = toGrayscale(data, width * height);
+  const gray = precomputedGray ?? toGrayscale(data, width * height);
   const cx = width / 2;
   const cy = height / 2;
 
@@ -38,13 +32,6 @@ export function validateCircularCode(
     segmentPattern,
     score,
   };
-}
-
-function sampleGray(gray: Uint8Array, width: number, x: number, y: number): number {
-  const ix = Math.round(x);
-  const iy = Math.round(y);
-  if (ix < 0 || ix >= width || iy < 0 || iy >= gray.length / width) return 128;
-  return gray[iy * width + ix];
 }
 
 function checkCenterDot(

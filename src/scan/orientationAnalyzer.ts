@@ -1,15 +1,9 @@
-import type { ImageBuffer } from "@/types";
+import type { ImageBuffer, OrientationAnalysis } from "@/types";
 
 import { getOrientationArcs, getOrientationRingRadius, getRingWidth } from "@/core/layout";
 import { toGrayscale } from "@/utils/image";
 
-/** Result of analyzing the orientation ring pattern. */
-export type OrientationAnalysis = {
-  angle: number;
-  reflected: boolean;
-  inverted: boolean;
-  confidence: number;
-};
+export type { OrientationAnalysis };
 
 /** Analyzes the orientation ring in a rectified image to determine rotation and reflection. */
 export function analyzeOrientation(
@@ -20,9 +14,10 @@ export function analyzeOrientation(
   centerX?: number,
   centerY?: number,
   segmentsPerRing = 48,
+  precomputedGray?: Uint8Array,
 ): OrientationAnalysis {
   const { data, width, height } = buf;
-  const gray = toGrayscale(data, width * height);
+  const gray = precomputedGray ?? toGrayscale(data, width * height);
   const cx = centerX ?? width / 2;
   const cy = centerY ?? height / 2;
   const radius = getOrientationRingRadius(rings, size);

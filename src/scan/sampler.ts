@@ -7,24 +7,7 @@ import {
   getSegmentsForRing,
   isDataRing,
 } from "@/core/layout";
-
-function pixelBrightness(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  bgBrightness: number,
-): number {
-  const ix = Math.round(x);
-  const iy = Math.round(y);
-  if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
-  const idx = (iy * width + ix) * 4;
-  const a = data[idx + 3];
-  if (a === 0) return bgBrightness;
-  const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-  return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
-}
+import { getPixelBrightness } from "@/utils/image";
 
 /** Samples bits from a rectified circular code image using polar coordinates.
  *  Uses multi-point sampling per segment with per-ring adaptive thresholding. */
@@ -63,7 +46,7 @@ export function samplePolarGrid(
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
         for (const sr of [innerRadius, centerRadius, outerRadius]) {
-          const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
+          const b = getPixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
           if (b >= 0) {
             sum += b;
             count++;

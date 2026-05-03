@@ -28,13 +28,10 @@ export {
   scanFrame,
   scanFromVideo,
 } from "@/scan";
-export type { RectifyResult, ScanFrameOptions, ScanFrameResult } from "@/scan";
 export { analyzeOrientation } from "@/scan/orientationAnalyzer";
-export type { OrientationAnalysis } from "@/scan/orientationAnalyzer";
 export { MultiFrameConsensus } from "@/scan/consensus";
 export { scoreFrame } from "@/scan/frameScorer";
 export { validateCircularCode } from "@/scan/validator";
-export type { ValidationResult } from "@/scan/validator";
 export { estimateCircleCorners, solveHomography, warpPerspective } from "@/scan/perspective";
 export { samplePolarGrid } from "@/scan/sampler";
 export {
@@ -64,7 +61,12 @@ export type {
   EncodedCode,
   FrameScore,
   ImageBuffer,
+  OrientationAnalysis,
   Point,
+  RectifyResult,
+  ScanFrameOptions,
+  ScanFrameResult,
   ScanOptions,
   ScanResult,
+  ValidationResult,
 } from "@/types";

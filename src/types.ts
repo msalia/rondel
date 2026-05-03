@@ -66,3 +66,54 @@ export type ScanOptions = {
   consensusRequired?: number;
   modelUrl?: string;
 };
+
+/** Result of analyzing the orientation ring pattern. */
+export type OrientationAnalysis = {
+  angle: number;
+  reflected: boolean;
+  inverted: boolean;
+  confidence: number;
+};
+
+/** Result of validating whether an image contains a circular code. */
+export type ValidationResult = {
+  valid: boolean;
+  centerDot: boolean;
+  ringContrast: boolean;
+  segmentPattern: boolean;
+  score: number;
+};
+
+/** Options for processing a single scan frame. */
+export type ScanFrameOptions = {
+  rings?: number;
+  segmentsPerRing?: number;
+  eccBytes?: number;
+  captureSize?: number;
+  codeSize?: number;
+  knownDetection?: DetectionResult;
+};
+
+/** Full result from scanning a single frame. */
+export type ScanFrameResult = {
+  detected: boolean;
+  decoded: string | null;
+  error: string | null;
+  detection: DetectionResult;
+  orientation: OrientationAnalysis;
+  corners: Point[];
+  warped: ImageBuffer;
+  rectified: ImageBuffer;
+  bits: number[];
+  validation: ValidationResult;
+  frameScore: FrameScore;
+};
+
+/** Result of rectifying a detected code region. */
+export type RectifyResult = {
+  image: ImageBuffer;
+  corners: Point[];
+  validation: ValidationResult;
+  orientation: OrientationAnalysis;
+  center: { cx: number; cy: number };
+};

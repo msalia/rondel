@@ -74,9 +74,30 @@ export function flipBufferHorizontal(buf: ImageBuffer): ImageBuffer {
   return { data: out, width, height };
 }
 
-/** Returns the average RGB brightness of a pixel, or 128 if out of bounds. */
-export function getPixelBrightness(buf: ImageBuffer, x: number, y: number): number {
-  if (x < 0 || x >= buf.width || y < 0 || y >= buf.height) return 128;
-  const idx = (y * buf.width + x) * 4;
-  return (buf.data[idx] + buf.data[idx + 1] + buf.data[idx + 2]) / 3;
+/** Returns the average RGB brightness of a pixel, or fallback if out of bounds.
+ *  Handles alpha compositing against the specified background brightness. */
+export function getPixelBrightness(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  bgBrightness = 128,
+): number {
+  const ix = Math.round(x);
+  const iy = Math.round(y);
+  if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
+  const idx = (iy * width + ix) * 4;
+  const a = data[idx + 3];
+  if (a === 0) return bgBrightness;
+  const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+  return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
+}
+
+/** Samples grayscale from a pre-computed grayscale array, returning fallback if out of bounds. */
+export function sampleGray(gray: Uint8Array, width: number, x: number, y: number, fallback = 128): number {
+  const ix = Math.round(x);
+  const iy = Math.round(y);
+  if (ix < 0 || ix >= width || iy < 0 || iy >= gray.length / width) return fallback;
+  return gray[iy * width + ix];
 }

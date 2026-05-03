@@ -101,19 +101,19 @@ describe("flipBufferHorizontal", () => {
 describe("getPixelBrightness", () => {
   it("returns brightness for white pixel", () => {
     const buf = makeWhiteBuffer(10);
-    expect(getPixelBrightness(buf, 5, 5)).toBe(255);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, 5, 5)).toBe(255);
   });
 
   it("returns brightness for black pixel", () => {
     const buf = makeBlackBuffer(10);
-    expect(getPixelBrightness(buf, 5, 5)).toBe(0);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, 5, 5)).toBe(0);
   });
 
-  it("returns 128 for out-of-bounds", () => {
+  it("returns -1 for out-of-bounds", () => {
     const buf = makeWhiteBuffer(10);
-    expect(getPixelBrightness(buf, -1, 5)).toBe(128);
-    expect(getPixelBrightness(buf, 5, -1)).toBe(128);
-    expect(getPixelBrightness(buf, 10, 5)).toBe(128);
-    expect(getPixelBrightness(buf, 5, 10)).toBe(128);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, -1, 5)).toBe(-1);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, 5, -1)).toBe(-1);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, 10, 5)).toBe(-1);
+    expect(getPixelBrightness(buf.data, buf.width, buf.height, 5, 10)).toBe(-1);
   });
 });

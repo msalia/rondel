@@ -8,9 +8,10 @@ export function refineCenterFromDot(
   buf: ImageBuffer,
   rings: number,
   size: number,
+  precomputedGray?: Uint8Array,
 ): { cx: number; cy: number } {
   const { data, width, height } = buf;
-  const gray = toGrayscale(data, width * height);
+  const gray = precomputedGray ?? toGrayscale(data, width * height);
   const expectedCx = width / 2;
   const expectedCy = height / 2;
   const ringWidth = getRingWidth(rings, size);
