@@ -75024,6 +75024,15 @@ return a / b;`;
     return bytes;
   }
 
+  // src/constants.ts
+  var DEFAULT_RINGS = 5;
+  var DEFAULT_SEGMENTS_PER_RING = 48;
+  var DEFAULT_ECC_BYTES = 4;
+  var DEFAULT_CODE_SIZE = 300;
+  var DEFAULT_CAPTURE_SIZE = 320;
+  var CONFIDENCE_THRESHOLD = 0.5;
+  var DEFAULT_CORNER_PADDING = 1.15;
+
   // src/core/layout.ts
   var GAP_FRACTION = 0.3;
   function getRingWidth(rings, size) {
@@ -75096,6 +75105,112 @@ return a / b;`;
     return total;
   }
 
+  // src/core/modes.ts
+  var Mode = {
+    NUMERIC: 0,
+    ALPHANUMERIC: 1,
+    BYTE: 2
+  };
+  var ALPHANUMERIC_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+  function detectMode(input2) {
+    if (/^\d+$/.test(input2)) return Mode.NUMERIC;
+    const lower = input2.toLowerCase();
+    const upper = input2.toUpperCase();
+    if (input2 !== lower && input2 !== upper) return Mode.BYTE;
+    for (let i = 0; i < upper.length; i++) {
+      if (ALPHANUMERIC_CHARS.indexOf(upper[i]) === -1) return Mode.BYTE;
+    }
+    return Mode.ALPHANUMERIC;
+  }
+  function isAllLowercase(input2) {
+    return input2 === input2.toLowerCase() && input2 !== input2.toUpperCase();
+  }
+  function bitsToPackedBytes(bits) {
+    const bytes = new Uint8Array(Math.ceil(bits.length / 8));
+    for (let i = 0; i < bytes.length; i++) {
+      let val = 0;
+      for (let b = 0; b < 8; b++) {
+        val = val << 1 | (bits[i * 8 + b] ?? 0);
+      }
+      bytes[i] = val;
+    }
+    return bytes;
+  }
+  function packNumeric(input2) {
+    const bits = [];
+    for (let i = 0; i < input2.length; i += 3) {
+      const group = input2.slice(i, i + 3);
+      const val = parseInt(group, 10);
+      const numBits = group.length === 3 ? 10 : group.length === 2 ? 7 : 4;
+      for (let b = numBits - 1; b >= 0; b--) {
+        bits.push(val >> b & 1);
+      }
+    }
+    return bitsToPackedBytes(bits);
+  }
+  function packAlphanumeric(input2) {
+    const upper = input2.toUpperCase();
+    const bits = [];
+    for (let i = 0; i < upper.length; i += 2) {
+      const c1 = ALPHANUMERIC_CHARS.indexOf(upper[i]);
+      if (i + 1 < upper.length) {
+        const c2 = ALPHANUMERIC_CHARS.indexOf(upper[i + 1]);
+        const val = c1 * 45 + c2;
+        for (let b = 10; b >= 0; b--) bits.push(val >> b & 1);
+      } else {
+        for (let b = 5; b >= 0; b--) bits.push(c1 >> b & 1);
+      }
+    }
+    return bitsToPackedBytes(bits);
+  }
+  function unpackNumeric(data, charCount) {
+    const bits = [];
+    for (const byte of data) {
+      for (let b = 7; b >= 0; b--) bits.push(byte >> b & 1);
+    }
+    let result = "";
+    let bitIdx = 0;
+    let remaining = charCount;
+    while (remaining >= 3) {
+      let val = 0;
+      for (let b = 0; b < 10; b++) val = val << 1 | (bits[bitIdx++] ?? 0);
+      result += val.toString().padStart(3, "0");
+      remaining -= 3;
+    }
+    if (remaining === 2) {
+      let val = 0;
+      for (let b = 0; b < 7; b++) val = val << 1 | (bits[bitIdx++] ?? 0);
+      result += val.toString().padStart(2, "0");
+    } else if (remaining === 1) {
+      let val = 0;
+      for (let b = 0; b < 4; b++) val = val << 1 | (bits[bitIdx++] ?? 0);
+      result += val.toString();
+    }
+    return result;
+  }
+  function unpackAlphanumeric(data, charCount) {
+    const bits = [];
+    for (const byte of data) {
+      for (let b = 7; b >= 0; b--) bits.push(byte >> b & 1);
+    }
+    let result = "";
+    let bitIdx = 0;
+    let remaining = charCount;
+    while (remaining >= 2) {
+      let val = 0;
+      for (let b = 0; b < 11; b++) val = val << 1 | (bits[bitIdx++] ?? 0);
+      result += ALPHANUMERIC_CHARS[Math.floor(val / 45)];
+      result += ALPHANUMERIC_CHARS[val % 45];
+      remaining -= 2;
+    }
+    if (remaining === 1) {
+      let val = 0;
+      for (let b = 0; b < 6; b++) val = val << 1 | (bits[bitIdx++] ?? 0);
+      result += ALPHANUMERIC_CHARS[val];
+    }
+    return result;
+  }
+
   // src/ecc/galoisField.ts
   var PRIM_POLY = 285;
   var EXP_TABLE = new Uint8Array(512);
@@ -75141,7 +75256,7 @@ return a / b;`;
   }
 
   // src/ecc/reedSolomon.ts
-  function rsEncode(data, eccBytes = 16) {
+  function rsEncode(data, eccBytes = DEFAULT_ECC_BYTES) {
     const gen = generatorPoly(eccBytes);
     const output = new Uint8Array(data.length + eccBytes);
     output.set(data);
@@ -75159,7 +75274,7 @@ return a / b;`;
     }
     return output;
   }
-  function rsDecode(received, eccBytes = 16) {
+  function rsDecode(received, eccBytes = DEFAULT_ECC_BYTES) {
     const n = received.length;
     const msg = Array.from(received);
     const syndromes = [];
@@ -75278,53 +75393,161 @@ return a / b;`;
 
   // src/core/encoder.ts
   function encode(input2, opts = {}) {
-    const { rings = 5, segmentsPerRing = 48, eccBytes = 16 } = opts;
-    const encoder = new TextEncoder();
-    const data = encoder.encode(input2);
-    const header = new Uint8Array([1, data.length]);
-    const payload = new Uint8Array([...header, ...data]);
+    const { rings = DEFAULT_RINGS, segmentsPerRing = DEFAULT_SEGMENTS_PER_RING, eccBytes = DEFAULT_ECC_BYTES } = opts;
+    const mode = detectMode(input2);
+    let packedData;
+    if (mode === Mode.NUMERIC) {
+      packedData = packNumeric(input2);
+    } else if (mode === Mode.ALPHANUMERIC) {
+      packedData = packAlphanumeric(input2);
+    } else {
+      packedData = new TextEncoder().encode(input2);
+    }
+    let modeField = mode;
+    if (mode === Mode.ALPHANUMERIC && isAllLowercase(input2)) {
+      modeField = 3;
+    }
+    const count2 = mode === Mode.BYTE ? packedData.length : input2.length;
+    const header = new Uint8Array([2, modeField << 6 | count2 & 63]);
+    const payload = new Uint8Array(header.length + packedData.length);
+    payload.set(header);
+    payload.set(packedData, header.length);
     const encoded = rsEncode(payload, eccBytes);
     const bits = bytesToBits(encoded);
     const capacity = getTotalSegments(rings, segmentsPerRing);
     if (bits.length > capacity) {
-      const maxDataBytes = Math.floor(capacity / 8) - eccBytes - 2;
+      const availBytes = Math.floor(capacity / 8) - eccBytes - 2;
+      const maxChars = mode === Mode.BYTE ? availBytes : estimateMaxChars(availBytes, mode);
       throw new Error(
-        `Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxDataBytes)} data bytes with ${eccBytes} ECC bytes.`
+        `Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxChars)} chars (${modeName(mode)} mode) with ${eccBytes} ECC bytes.`
       );
     }
-    return {
-      bits,
-      rings,
-      segmentsPerRing
-    };
+    return { bits, rings, segmentsPerRing };
+  }
+  function estimateMaxChars(availBytes, mode) {
+    const availBits = availBytes * 8;
+    if (mode === Mode.NUMERIC) return Math.floor(availBits / 10) * 3 + (availBits % 10 >= 7 ? 2 : availBits % 10 >= 4 ? 1 : 0);
+    if (mode === Mode.ALPHANUMERIC) return Math.floor(availBits / 11) * 2 + (availBits % 11 >= 6 ? 1 : 0);
+    return availBytes;
+  }
+  function modeName(mode) {
+    return mode === Mode.NUMERIC ? "numeric" : mode === Mode.ALPHANUMERIC ? "alphanumeric" : "byte";
   }
 
   // src/core/decoder.ts
-  function decode(bits, eccBytes = 16) {
+  function decode(bits, eccBytes = DEFAULT_ECC_BYTES) {
     const bytes = bitsToBytes(bits);
     const decoded = rsDecode(bytes, eccBytes);
     if (decoded.length < 2) {
       throw new Error("Decoded data too short for header");
     }
     const version8 = decoded[0];
-    if (version8 !== 1) {
-      throw new Error(`Unsupported version: ${version8}`);
+    if (version8 === 1) {
+      const length = decoded[1];
+      if (2 + length > decoded.length) {
+        throw new Error(`Invalid payload length: ${length}`);
+      }
+      return new TextDecoder().decode(decoded.slice(2, 2 + length));
     }
-    const length = decoded[1];
-    if (2 + length > decoded.length) {
-      throw new Error(`Invalid payload length: ${length}`);
+    if (version8 === 2) {
+      const modeByte = decoded[1];
+      const modeField = modeByte >> 6 & 3;
+      const charCount = modeByte & 63;
+      const data = decoded.slice(2);
+      if (modeField === Mode.NUMERIC) {
+        return unpackNumeric(data, charCount);
+      }
+      if (modeField === Mode.ALPHANUMERIC || modeField === 3) {
+        const text = unpackAlphanumeric(data, charCount);
+        return modeField === 3 ? text.toLowerCase() : text;
+      }
+      if (charCount > data.length) {
+        throw new Error(`Invalid payload length: ${charCount}`);
+      }
+      return new TextDecoder().decode(data.slice(0, charCount));
     }
-    const payload = decoded.slice(2, 2 + length);
-    return new TextDecoder().decode(payload);
+    throw new Error(`Unsupported version: ${version8}`);
   }
 
   // src/render/svgRenderer.ts
-  var DEFAULT_SIZE = 300;
+  var DEFAULT_SIZE = DEFAULT_CODE_SIZE;
   var DEFAULT_PRIMARY = "#000000";
   var DEFAULT_SECONDARY = "#d0d0d0";
   var STROKE_WIDTH_RATIO = 0.5;
   var CENTER_RADIUS_RATIO = 0.75;
   var SECONDARY_SEPARATION = 1;
+  function svgArc(cx, cy, radius, start, end, strokeWidth) {
+    const sweep = end - start;
+    if (sweep <= 0) return "";
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const x1 = cx + radius * Math.cos(start);
+    const y1 = cy + radius * Math.sin(start);
+    const x2 = cx + radius * Math.cos(end);
+    const y2 = cy + radius * Math.sin(end);
+    return `
+        <path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}"
+          stroke-width="${strokeWidth}" fill="none" stroke-linecap="round"/>`;
+  }
+  function findPrimaryRuns(ringBits, segs) {
+    const runs = [];
+    let i = 0;
+    while (i < segs) {
+      if (!ringBits[i]) {
+        i++;
+        continue;
+      }
+      let runEnd = i + 1;
+      while (runEnd < segs && ringBits[runEnd]) runEnd++;
+      runs.push({ startSeg: i, runLen: runEnd - i });
+      i = runEnd;
+    }
+    return runs;
+  }
+  function renderDataRings(bits, rings, segmentsPerRing, cx, cy, size, strokeWidth) {
+    let primaryPaths = "";
+    let secondaryPaths = "";
+    let bitIndex = 0;
+    for (let r = 0; r < rings; r++) {
+      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
+      const segAngle = 2 * Math.PI / segs;
+      const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
+      if (!isDataRing(r)) continue;
+      const ringBits = [];
+      for (let i = 0; i < segs; i++) ringBits.push(bits[bitIndex++] ?? 0);
+      const primaryArcs = findPrimaryRuns(ringBits, segs);
+      for (const arc of primaryArcs) {
+        const start = getSegmentAngle(arc.startSeg, segs);
+        const end = start + segAngle * (arc.runLen - GAP_FRACTION);
+        primaryPaths += svgArc(cx, cy, radius, start, end, strokeWidth);
+      }
+      if (primaryArcs.length === 0) {
+        const start = getSegmentAngle(0, segs);
+        const end = start + segAngle * (segs - GAP_FRACTION);
+        secondaryPaths += svgArc(cx, cy, radius, start, end, strokeWidth);
+      } else {
+        for (let j = 0; j < primaryArcs.length; j++) {
+          const cur = primaryArcs[j];
+          const next = primaryArcs[(j + 1) % primaryArcs.length];
+          const gapStartSeg = cur.startSeg + cur.runLen + SECONDARY_SEPARATION;
+          const gapEndSeg = j + 1 < primaryArcs.length ? next.startSeg - SECONDARY_SEPARATION : next.startSeg + segs - SECONDARY_SEPARATION;
+          const gapLen = gapEndSeg - gapStartSeg;
+          if (gapLen < 1) continue;
+          const start = getSegmentAngle(gapStartSeg % segs, segs);
+          const arcSpan = segAngle * (gapLen - GAP_FRACTION);
+          secondaryPaths += svgArc(cx, cy, radius, start, start + arcSpan, strokeWidth);
+        }
+      }
+    }
+    return { primaryPaths, secondaryPaths };
+  }
+  function renderOrientationRing(rings, segmentsPerRing, cx, cy, size, strokeWidth) {
+    let paths = "";
+    const radius = getOrientationRingRadius(rings, size);
+    for (const arc of getOrientationArcs(rings, size, segmentsPerRing)) {
+      paths += svgArc(cx, cy, radius, arc.start, arc.end, strokeWidth);
+    }
+    return paths;
+  }
   function renderSVG(code, opts = {}) {
     const normalized = typeof opts === "number" ? { size: opts } : opts;
     const {
@@ -75337,107 +75560,9 @@ return a / b;`;
     const cy = size / 2;
     const ringWidth = getRingWidth(rings, size);
     const strokeWidth = ringWidth * STROKE_WIDTH_RATIO;
-    let secondaryPaths = "";
-    let primaryPaths = "";
-    let bitIndex = 0;
-    for (let r = 0; r < rings; r++) {
-      const segs = getSegmentsForRing(r, rings, segmentsPerRing);
-      const segAngle = 2 * Math.PI / segs;
-      const radius = getExactRingRadius(r, rings, size, segmentsPerRing);
-      if (!isDataRing(r)) continue;
-      const ringBits = [];
-      for (let i2 = 0; i2 < segs; i2++) {
-        ringBits.push(bits[bitIndex++] ?? 0);
-      }
-      const primaryArcs = [];
-      let i = 0;
-      while (i < segs) {
-        if (!ringBits[i]) {
-          i++;
-          continue;
-        }
-        let runEnd = i + 1;
-        while (runEnd < segs && ringBits[runEnd]) runEnd++;
-        primaryArcs.push({ startSeg: i, runLen: runEnd - i });
-        i = runEnd;
-      }
-      for (const arc of primaryArcs) {
-        const start = getSegmentAngle(arc.startSeg, segs);
-        const end = start + segAngle * (arc.runLen - GAP_FRACTION);
-        const sweep = end - start;
-        if (sweep <= 0) continue;
-        const largeArc = sweep > Math.PI ? 1 : 0;
-        const x1 = cx + radius * Math.cos(start);
-        const y1 = cy + radius * Math.sin(start);
-        const x2 = cx + radius * Math.cos(end);
-        const y2 = cy + radius * Math.sin(end);
-        primaryPaths += `
-        <path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}"
-          stroke-width="${strokeWidth}"
-          fill="none"
-          stroke-linecap="round"/>`;
-      }
-      if (primaryArcs.length === 0) {
-        i = 0;
-        while (i < segs) {
-          let runEnd = i + 1;
-          while (runEnd < segs) runEnd++;
-          const start = getSegmentAngle(i, segs);
-          const end = start + segAngle * (segs - GAP_FRACTION);
-          const largeArc = end - start > Math.PI ? 1 : 0;
-          const x1 = cx + radius * Math.cos(start);
-          const y1 = cy + radius * Math.sin(start);
-          const x2 = cx + radius * Math.cos(end);
-          const y2 = cy + radius * Math.sin(end);
-          secondaryPaths += `
-        <path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}"
-          stroke-width="${strokeWidth}"
-          fill="none"
-          stroke-linecap="round"/>`;
-          break;
-        }
-      } else {
-        for (let j = 0; j < primaryArcs.length; j++) {
-          const cur = primaryArcs[j];
-          const next = primaryArcs[(j + 1) % primaryArcs.length];
-          const gapStartSeg = cur.startSeg + cur.runLen + SECONDARY_SEPARATION;
-          const gapEndSeg = j + 1 < primaryArcs.length ? next.startSeg - SECONDARY_SEPARATION : next.startSeg + segs - SECONDARY_SEPARATION;
-          const gapLen = gapEndSeg - gapStartSeg;
-          if (gapLen < 1) continue;
-          const start = getSegmentAngle(gapStartSeg % segs, segs);
-          const arcSpan = segAngle * (gapLen - GAP_FRACTION);
-          if (arcSpan <= 0) continue;
-          const end = start + arcSpan;
-          const largeArc = arcSpan > Math.PI ? 1 : 0;
-          const x1 = cx + radius * Math.cos(start);
-          const y1 = cy + radius * Math.sin(start);
-          const x2 = cx + radius * Math.cos(end);
-          const y2 = cy + radius * Math.sin(end);
-          secondaryPaths += `
-        <path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}"
-          stroke-width="${strokeWidth}"
-          fill="none"
-          stroke-linecap="round"/>`;
-        }
-      }
-    }
     const centerRadius = ringWidth * CENTER_RADIUS_RATIO;
-    let orientationPaths = "";
-    const orientationRadius = getOrientationRingRadius(rings, size);
-    const orientationStroke = ringWidth * STROKE_WIDTH_RATIO;
-    for (const arc of getOrientationArcs(rings, size, segmentsPerRing)) {
-      const sweep = arc.end - arc.start;
-      const largeArc = sweep > Math.PI ? 1 : 0;
-      const x1 = cx + orientationRadius * Math.cos(arc.start);
-      const y1 = cy + orientationRadius * Math.sin(arc.start);
-      const x2 = cx + orientationRadius * Math.cos(arc.end);
-      const y2 = cy + orientationRadius * Math.sin(arc.end);
-      orientationPaths += `
-        <path d="M ${x1} ${y1} A ${orientationRadius} ${orientationRadius} 0 ${largeArc} 1 ${x2} ${y2}"
-          stroke-width="${orientationStroke}"
-          fill="none"
-          stroke-linecap="round"/>`;
-    }
+    const { primaryPaths, secondaryPaths } = renderDataRings(bits, rings, segmentsPerRing, cx, cy, size, strokeWidth);
+    const orientationPaths = renderOrientationRing(rings, segmentsPerRing, cx, cy, size, strokeWidth);
     return `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
       <g stroke="${secondary}">${secondaryPaths}
@@ -75452,7 +75577,7 @@ return a / b;`;
   }
 
   // src/render/canvasRenderer.ts
-  function renderCanvas(code, size = 300) {
+  function renderCanvas(code, size = DEFAULT_CODE_SIZE) {
     const svg = renderSVG(code, { size, primary: "#000000", secondary: "#d0d0d0" });
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -75466,6 +75591,9 @@ return a / b;`;
     const url = URL.createObjectURL(blob);
     img.onload = () => {
       ctx.drawImage(img, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
       URL.revokeObjectURL(url);
     };
     img.src = url;
@@ -75611,7 +75739,7 @@ return a / b;`;
     ctx.putImageData(imageData, 0, 0);
     return canvas;
   }
-  function captureFrame(video, targetSize = 320) {
+  function captureFrame(video, targetSize = DEFAULT_CAPTURE_SIZE) {
     const { canvas, ctx } = getOrCreateCanvas(targetSize, "captureFrame", {
       willReadFrequently: true
     });
@@ -75623,7 +75751,7 @@ return a / b;`;
     ctx.drawImage(video, sx, sy, side, side, 0, 0, targetSize, targetSize);
     return canvas;
   }
-  function captureFrameToBuffer(video, targetSize = 320) {
+  function captureFrameToBuffer(video, targetSize = DEFAULT_CAPTURE_SIZE) {
     const canvas = captureFrame(video, targetSize);
     return canvasToBuffer(canvas);
   }
@@ -75634,6 +75762,22 @@ return a / b;`;
       gray[i] = data[idx] * 77 + data[idx + 1] * 150 + data[idx + 2] * 29 >> 8;
     }
     return gray;
+  }
+  function getPixelBrightness(data, width, height, x2, y, bgBrightness = 128) {
+    const ix = Math.round(x2);
+    const iy = Math.round(y);
+    if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
+    const idx = (iy * width + ix) * 4;
+    const a = data[idx + 3];
+    if (a === 0) return bgBrightness;
+    const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+    return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
+  }
+  function sampleGray(gray, width, x2, y, fallback = 128) {
+    const ix = Math.round(x2);
+    const iy = Math.round(y);
+    if (ix < 0 || ix >= width || iy < 0 || iy >= gray.length / width) return fallback;
+    return gray[iy * width + ix];
   }
 
   // src/scan/detector.ts
@@ -75762,9 +75906,9 @@ return a / b;`;
   }
 
   // src/scan/centerRefine.ts
-  function refineCenterFromDot(buf, rings, size) {
+  function refineCenterFromDot(buf, rings, size, precomputedGray) {
     const { data, width, height } = buf;
-    const gray = toGrayscale(data, width * height);
+    const gray = precomputedGray ?? toGrayscale(data, width * height);
     const expectedCx = width / 2;
     const expectedCy = height / 2;
     const ringWidth = getRingWidth(rings, size);
@@ -75823,9 +75967,9 @@ return a / b;`;
   }
 
   // src/scan/orientationAnalyzer.ts
-  function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY, segmentsPerRing = 48) {
+  function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY, segmentsPerRing = 48, precomputedGray) {
     const { data, width, height } = buf;
-    const gray = toGrayscale(data, width * height);
+    const gray = precomputedGray ?? toGrayscale(data, width * height);
     const cx = centerX ?? width / 2;
     const cy = centerY ?? height / 2;
     const radius = getOrientationRingRadius(rings, size);
@@ -76062,16 +76206,6 @@ return a / b;`;
   }
 
   // src/scan/sampler.ts
-  function pixelBrightness(data, width, height, x2, y, bgBrightness) {
-    const ix = Math.round(x2);
-    const iy = Math.round(y);
-    if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
-    const idx = (iy * width + ix) * 4;
-    const a = data[idx + 3];
-    if (a === 0) return bgBrightness;
-    const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-    return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
-  }
   function samplePolarGrid(frame2, cx, cy, codeSize, rings = 5, segmentsPerRing = 48, orientationOffset = 0, inverted2 = false) {
     const { data, width, height } = frame2;
     const ringWidth = getRingWidth(rings, codeSize);
@@ -76086,7 +76220,7 @@ return a / b;`;
       const outerRadius = centerRadius + ringWidth * 0.1;
       const ringBrightness = [];
       for (let segment = 0; segment < segs; segment++) {
-        const segCenter = getSegmentAngle2(segment, segs) + segAngle * 0.35 + orientationOffset;
+        const segCenter = getSegmentAngle(segment, segs) + segAngle * 0.35 + orientationOffset;
         let sum5 = 0;
         let count2 = 0;
         for (const aOff of [-segAngle * 0.1, 0, segAngle * 0.1]) {
@@ -76094,7 +76228,7 @@ return a / b;`;
           const cosA = Math.cos(angle);
           const sinA = Math.sin(angle);
           for (const sr of [innerRadius, centerRadius, outerRadius]) {
-            const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
+            const b = getPixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
             if (b >= 0) {
               sum5 += b;
               count2++;
@@ -76122,14 +76256,11 @@ return a / b;`;
     }
     return bits;
   }
-  function getSegmentAngle2(segment, segmentsInRing) {
-    return segment / segmentsInRing * Math.PI * 2;
-  }
 
   // src/scan/validator.ts
-  function validateCircularCode(buf, rings, size, threshold3 = 0.5, segmentsPerRing = 48) {
+  function validateCircularCode(buf, rings, size, threshold3 = 0.5, segmentsPerRing = 48, precomputedGray) {
     const { data, width, height } = buf;
-    const gray = toGrayscale(data, width * height);
+    const gray = precomputedGray ?? toGrayscale(data, width * height);
     const cx = width / 2;
     const cy = height / 2;
     const centerDot = checkCenterDot(gray, width, cx, cy, rings, size);
@@ -76143,12 +76274,6 @@ return a / b;`;
       segmentPattern,
       score
     };
-  }
-  function sampleGray(gray, width, x2, y) {
-    const ix = Math.round(x2);
-    const iy = Math.round(y);
-    if (ix < 0 || ix >= width || iy < 0 || iy >= gray.length / width) return 128;
-    return gray[iy * width + ix];
   }
   function checkCenterDot(gray, width, cx, cy, rings, size) {
     const dotRadius = getRingWidth(rings, size) * 0.65;
@@ -76224,8 +76349,6 @@ return a / b;`;
   }
 
   // src/scan/index.ts
-  var CAPTURE_SIZE = 320;
-  var CODE_SIZE = 300;
   function detectCode(buf) {
     if (isModelLoaded()) {
       const mlResult = detectWithModel(buf);
@@ -76233,7 +76356,7 @@ return a / b;`;
     }
     return detectCircle(buf);
   }
-  function resolveCorners(detection, padding = 1.15) {
+  function resolveCorners(detection, padding = DEFAULT_CORNER_PADDING) {
     let corners;
     if (detection.corners && detection.corners.length === 4) {
       corners = detection.corners;
@@ -76255,11 +76378,11 @@ return a / b;`;
   }
   function scanFrame(source, options = {}) {
     const {
-      rings = 5,
-      segmentsPerRing = 48,
-      eccBytes = 16,
-      captureSize = CAPTURE_SIZE,
-      codeSize = CODE_SIZE
+      rings = DEFAULT_RINGS,
+      segmentsPerRing = DEFAULT_SEGMENTS_PER_RING,
+      eccBytes = DEFAULT_ECC_BYTES,
+      captureSize = DEFAULT_CAPTURE_SIZE,
+      codeSize = DEFAULT_CODE_SIZE
     } = options;
     let captured;
     if (typeof HTMLVideoElement !== "undefined" && source instanceof HTMLVideoElement) {
@@ -76270,14 +76393,15 @@ return a / b;`;
       captured = source;
     }
     const detection = options.knownDetection ?? detectCode(captured);
-    const detected = detection.confidence >= 0.5;
+    const detected = detection.confidence >= CONFIDENCE_THRESHOLD;
     const activeDetection = detected ? detection : { cx: captured.width / 2, cy: captured.height / 2, r: captured.width * 0.35, confidence: 0 };
     const corners = resolveCorners(activeDetection);
     const warped = warpPerspective(captured, corners, codeSize);
     const rectified = warped;
-    const center = refineCenterFromDot(rectified, rings, codeSize);
-    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing);
-    const validation = validateCircularCode(rectified, rings, codeSize, 0.5, segmentsPerRing);
+    const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
+    const center = refineCenterFromDot(rectified, rings, codeSize, gray);
+    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing, gray);
+    const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
     const frameScoreResult = scoreFrame(
       captured,
       activeDetection.cx,
@@ -76300,7 +76424,7 @@ return a / b;`;
       try {
         decoded = decode(bits, eccBytes);
       } catch (e) {
-        error = e.message;
+        error = e instanceof Error ? e.message : String(e);
       }
     } else {
       error = `Not a circular code (score=${validation.score.toFixed(2)})`;
