@@ -131,8 +131,9 @@ function scanFromImage() {
   img.onload = () => {
     URL.revokeObjectURL(url);
 
-    const codeRenderSize = 200;
-    const captureSize = 320;
+    const svgSize = parseInt(svgEl.getAttribute("width") || "300");
+    const codeRenderSize = Math.max(svgSize, 300);
+    const captureSize = Math.round(codeRenderSize * 1.6);
     const pad = (captureSize - codeRenderSize) / 2;
 
     const canvas = document.createElement("canvas");

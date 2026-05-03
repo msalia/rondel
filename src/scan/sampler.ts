@@ -13,12 +13,16 @@ function pixelBrightness(
   height: number,
   x: number,
   y: number,
+  bgBrightness: number,
 ): number {
   const ix = Math.round(x);
   const iy = Math.round(y);
   if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
   const idx = (iy * width + ix) * 4;
-  return (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+  const a = data[idx + 3];
+  if (a === 0) return bgBrightness;
+  const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+  return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
 }
 
 /** Samples bits from a rectified circular code image using polar coordinates.
@@ -35,6 +39,7 @@ export function samplePolarGrid(
 ): number[] {
   const { data, width, height } = frame;
   const ringWidth = getRingWidth(rings, codeSize);
+  const bgBrightness = inverted ? 0 : 255;
   const bits: number[] = [];
 
   for (let r = 0; r < rings; r++) {
@@ -57,7 +62,7 @@ export function samplePolarGrid(
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
         for (const sr of [innerRadius, centerRadius, outerRadius]) {
-          const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
+          const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
           if (b >= 0) {
             sum += b;
             count++;
@@ -70,9 +75,18 @@ export function samplePolarGrid(
     }
 
     const sorted = Float64Array.from(ringBrightness).sort();
-    const lo = sorted[Math.floor(sorted.length * 0.25)];
-    const hi = sorted[Math.floor(sorted.length * 0.75)];
-    const threshold = hi - lo < 30 ? 128 : (lo + hi) / 2;
+    let maxGap = 0;
+    let splitIdx = 0;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const gap = sorted[i + 1] - sorted[i];
+      if (gap > maxGap) {
+        maxGap = gap;
+        splitIdx = i;
+      }
+    }
+    const threshold = maxGap > 30
+      ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2
+      : 128;
 
     for (let segment = 0; segment < segs; segment++) {
       const dark = ringBrightness[segment] < threshold;

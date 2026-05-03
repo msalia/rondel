@@ -81,6 +81,54 @@ function randomColor(minBright: number, maxBright: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60)       { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else              { r = c; b = x; }
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+function randomDarkSaturatedColor(): string {
+  const h = randomInt(0, 359);
+  const s = random(0.6, 1.0);
+  const l = random(0.15, 0.35);
+  const [r, g, b] = hslToRgb(h, s, l);
+  return `rgb(${r},${g},${b})`;
+}
+
+function randomBrightColor(): string {
+  const h = randomInt(0, 359);
+  const s = random(0.6, 1.0);
+  const l = random(0.6, 0.85);
+  const [r, g, b] = hslToRgb(h, s, l);
+  return `rgb(${r},${g},${b})`;
+}
+
+function randomDarkMutedColor(): string {
+  const h = randomInt(0, 359);
+  const s = random(0.1, 0.4);
+  const l = random(0.08, 0.2);
+  const [r, g, b] = hslToRgb(h, s, l);
+  return `rgb(${r},${g},${b})`;
+}
+
+function randomLightTintColor(baseColor: string): string {
+  const match = baseColor.match(/rgb\((\d+),(\d+),(\d+)\)/);
+  if (match) {
+    const br = parseInt(match[1]), bg = parseInt(match[2]), bb = parseInt(match[3]);
+    const t = random(0.65, 0.85);
+    return `rgb(${Math.round(br + (255 - br) * t)},${Math.round(bg + (255 - bg) * t)},${Math.round(bb + (255 - bb) * t)})`;
+  }
+  return `rgb(${randomInt(200, 240)},${randomInt(200, 240)},${randomInt(200, 240)})`;
+}
+
 async function drawCircularCode(
   ctx: CanvasRenderingContext2D,
   code: EncodedCode,
@@ -227,7 +275,9 @@ async function generatePositive(index: number, split: "train" | "val"): Promise<
 
   const inverted = Math.random() < 0.35;
 
-  const bgColor = inverted ? randomColor(0, 60) : randomColor(180, 255);
+  const bgColor = inverted
+    ? (Math.random() < 0.3 ? randomDarkMutedColor() : randomColor(0, 60))
+    : (Math.random() < 0.3 ? `rgb(${randomInt(230,255)},${randomInt(220,250)},${randomInt(210,245)})` : randomColor(180, 255));
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
@@ -260,9 +310,19 @@ async function generatePositive(index: number, split: "train" | "val"): Promise<
   ctx.translate(cx, cy);
   ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
 
+  const colored = Math.random() < 0.4;
+
   let fgColor: string;
   let secColor: string;
-  if (inverted) {
+  if (colored) {
+    if (inverted) {
+      fgColor = randomBrightColor();
+      secColor = randomDarkMutedColor();
+    } else {
+      fgColor = randomDarkSaturatedColor();
+      secColor = randomLightTintColor(fgColor);
+    }
+  } else if (inverted) {
     const fgBright = randomInt(200, 255);
     fgColor = `rgb(${fgBright},${fgBright},${fgBright})`;
     const secBright = randomInt(30, Math.max(40, fgBright - 40));

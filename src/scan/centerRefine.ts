@@ -15,7 +15,7 @@ export function refineCenterFromDot(
   const expectedCy = height / 2;
   const ringWidth = getRingWidth(rings, size);
   const dotRadius = ringWidth * 0.75;
-  const searchRadius = Math.ceil(ringWidth * 2);
+  const searchRadius = Math.ceil(dotRadius * 2);
 
   let innerSum = 0, innerN = 0;
   let outerSum = 0, outerN = 0;

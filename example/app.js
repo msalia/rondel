@@ -75769,7 +75769,7 @@ return a / b;`;
     const expectedCy = height / 2;
     const ringWidth = getRingWidth(rings, size);
     const dotRadius = ringWidth * 0.75;
-    const searchRadius = Math.ceil(ringWidth * 2);
+    const searchRadius = Math.ceil(dotRadius * 2);
     let innerSum = 0, innerN = 0;
     let outerSum = 0, outerN = 0;
     for (let dy = -searchRadius; dy <= searchRadius; dy++) {
@@ -76062,16 +76062,20 @@ return a / b;`;
   }
 
   // src/scan/sampler.ts
-  function pixelBrightness(data, width, height, x2, y) {
+  function pixelBrightness(data, width, height, x2, y, bgBrightness) {
     const ix = Math.round(x2);
     const iy = Math.round(y);
     if (ix < 0 || ix >= width || iy < 0 || iy >= height) return -1;
     const idx = (iy * width + ix) * 4;
-    return (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+    const a = data[idx + 3];
+    if (a === 0) return bgBrightness;
+    const raw = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+    return a === 255 ? raw : raw * (a / 255) + bgBrightness * (1 - a / 255);
   }
   function samplePolarGrid(frame2, cx, cy, codeSize, rings = 5, segmentsPerRing = 48, orientationOffset = 0, inverted2 = false) {
     const { data, width, height } = frame2;
     const ringWidth = getRingWidth(rings, codeSize);
+    const bgBrightness = inverted2 ? 0 : 255;
     const bits = [];
     for (let r = 0; r < rings; r++) {
       if (!isDataRing(r)) continue;
@@ -76090,7 +76094,7 @@ return a / b;`;
           const cosA = Math.cos(angle);
           const sinA = Math.sin(angle);
           for (const sr of [innerRadius, centerRadius, outerRadius]) {
-            const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA);
+            const b = pixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
             if (b >= 0) {
               sum5 += b;
               count2++;
@@ -76101,9 +76105,16 @@ return a / b;`;
         ringBrightness.push(avg);
       }
       const sorted = Float64Array.from(ringBrightness).sort();
-      const lo = sorted[Math.floor(sorted.length * 0.25)];
-      const hi = sorted[Math.floor(sorted.length * 0.75)];
-      const threshold3 = hi - lo < 30 ? 128 : (lo + hi) / 2;
+      let maxGap = 0;
+      let splitIdx = 0;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const gap = sorted[i + 1] - sorted[i];
+        if (gap > maxGap) {
+          maxGap = gap;
+          splitIdx = i;
+        }
+      }
+      const threshold3 = maxGap > 30 ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2 : 128;
       for (let segment = 0; segment < segs; segment++) {
         const dark = ringBrightness[segment] < threshold3;
         bits.push(dark !== inverted2 ? 1 : 0);
@@ -76414,8 +76425,9 @@ return a / b;`;
     const url = URL.createObjectURL(blob);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const codeRenderSize = 200;
-      const captureSize = 320;
+      const svgSize = parseInt(svgEl.getAttribute("width") || "300");
+      const codeRenderSize = Math.max(svgSize, 300);
+      const captureSize = Math.round(codeRenderSize * 1.6);
       const pad2 = (captureSize - codeRenderSize) / 2;
       const canvas = document.createElement("canvas");
       canvas.width = captureSize;
