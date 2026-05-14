@@ -20,7 +20,6 @@
   },
   "license": "MIT",
   "scripts": {
-    "prepare": "npm run build",
     "build": "tsc && node scripts/resolve-aliases.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -40,7 +39,6 @@
     "@tensorflow/tfjs": "^4.22.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19",
-    "canvas": "^3.2.3",
     "esbuild": "^0.25.0",
     "eslint": "^10.2.1",
     "eslint-plugin-perfectionist": "^5.9.0",
