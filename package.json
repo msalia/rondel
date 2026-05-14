@@ -53,7 +53,7 @@
   "peerDependencies": {
     "@tensorflow/tfjs": "^4.22.0",
     "canvas": "^3.2.3",
-    "react": "^19.2.5"
+    "react": "^19.0.0"
   },
   "peerDependenciesMeta": {
     "@tensorflow/tfjs": { "optional": true },
