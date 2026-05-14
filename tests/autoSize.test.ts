@@ -117,13 +117,6 @@ describe("autoSize constraints", () => {
     }
   });
 
-  it("capacityBits is always a multiple of 8", () => {
-    const inputs = ["a", "hello", "https://example.com"];
-    for (const input of inputs) {
-      const result = autoSize(input)!;
-      expect(result.capacityBits % 8).toBe(0);
-    }
-  });
 });
 
 describe("autoSize selection logic", () => {

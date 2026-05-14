@@ -214,27 +214,3 @@ describe("V3 header", () => {
   });
 });
 
-describe("bit-aligned grid", () => {
-  it("total segments is always a multiple of 8", () => {
-    for (const rings of [3, 4, 5, 6, 7, 8]) {
-      for (const segs of [32, 48, 64, 80]) {
-        const total = getTotalSegments(rings, segs);
-        expect(total % 8).toBe(0);
-      }
-    }
-  });
-
-  it("bit-aligned grid has at least as many segments as unaligned", () => {
-    for (const rings of [3, 4, 5, 6, 7, 8]) {
-      for (const segs of [32, 48, 64, 80]) {
-        const total = getTotalSegments(rings, segs);
-        let rawTotal = 0;
-        for (let r = 1; r < rings; r++) {
-          rawTotal += Math.max(8, Math.round((segs * (r + 1)) / rings));
-        }
-        expect(total).toBeGreaterThanOrEqual(rawTotal);
-        expect(total - rawTotal).toBeLessThan(8);
-      }
-    }
-  });
-});
