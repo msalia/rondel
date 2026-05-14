@@ -11,7 +11,7 @@
     }
   },
   "files": [
-    "dist",
+    "dist/src",
     "models/circular_code"
   ],
   "repository": {
