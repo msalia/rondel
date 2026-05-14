@@ -1,6 +1,6 @@
 export { AUTO_MAX_ECC, AUTO_MAX_RINGS, AUTO_MIN_ECC, AUTO_MIN_RINGS, AUTO_SEGMENT_CANDIDATES, CONFIDENCE_THRESHOLD, DEFAULT_CAPTURE_SIZE, DEFAULT_CODE_SIZE, DEFAULT_CONSENSUS_REQUIRED, DEFAULT_CONSENSUS_SIZE, DEFAULT_CORNER_PADDING, DEFAULT_ECC_BYTES, DEFAULT_MIN_FRAME_SCORE, DEFAULT_RINGS, DEFAULT_SEGMENTS_PER_RING, SCAN_TIMEOUT_MS, } from "./constants";
 export { encode } from "./core/encoder";
-export { autoSize, computeDataBytes, computeNeededBits, minRingsForBits, } from "./core/autoSize";
+export { autoSize, computeDataBytes, computeNeededBits, minRingsForBits } from "./core/autoSize";
 export type { AutoSizeResult } from "./core/autoSize";
 export { detectMode, Mode } from "./core/modes";
 export { decode } from "./core/decoder";
