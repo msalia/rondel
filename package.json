@@ -1,10 +1,26 @@
 {
-  "name": "circular-code",
+  "name": "@msalia/rondel",
   "version": "0.1.0",
-  "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "Rondel — a circular barcode format that encodes text into concentric ring patterns, with ML detection and Reed-Solomon error correction",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "models/circular_code"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msalia/rondel.git"
+  },
+  "license": "MIT",
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc && node scripts/resolve-aliases.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,25 +32,33 @@
     "format:check": "prettier --check 'src/**/*.ts' 'scripts/**/*.ts'",
     "lint": "eslint 'src/**/*.ts' 'scripts/**/*.ts'",
     "lint:fix": "eslint --fix 'src/**/*.ts' 'scripts/**/*.ts'",
-    "example:build": "node example/build.js",
-    "example": "node example/build.js && node example/serve.js"
+    "debug:build": "node debug/build.js",
+    "debug": "node debug/build.js && node debug/serve.js"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
     "@eslint/js": "^10.0.1",
+    "@tensorflow/tfjs": "^4.22.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19",
+    "canvas": "^3.2.3",
+    "esbuild": "^0.25.0",
     "eslint": "^10.2.1",
     "eslint-plugin-perfectionist": "^5.9.0",
     "prettier": "^3.8.3",
+    "react": "^19.2.5",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.59.0",
     "vitest": "^3.2.4"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@tensorflow/tfjs": "^4.22.0",
     "canvas": "^3.2.3",
     "react": "^19.2.5"
+  },
+  "peerDependenciesMeta": {
+    "@tensorflow/tfjs": { "optional": true },
+    "canvas": { "optional": true },
+    "react": { "optional": true }
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

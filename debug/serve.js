@@ -42,7 +42,7 @@ const server = http.createServer((req, res) => {
 server.on("error", (err) => {
   if (err.code === "EADDRINUSE") {
     console.error(`Port ${PORT} is already in use. Kill it with: lsof -ti:${PORT} | xargs kill`);
-    console.error(`Or use a different port: PORT=3001 npm run example`);
+    console.error(`Or use a different port: PORT=3001 npm run debug`);
     process.exit(1);
   }
   throw err;
@@ -50,7 +50,7 @@ server.on("error", (err) => {
 
 server.listen(PORT, () => {
   console.log("");
-  console.log(`  Circular Code example app`);
+  console.log(`  Circular Code debug app`);
   console.log(`  http://localhost:${PORT}`);
   console.log("");
   console.log("  Press Ctrl+C to stop");
