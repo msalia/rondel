@@ -1,6 +1,5 @@
-import { EXP_TABLE, generatorPoly, gfDiv, gfInverse, gfMul } from "@/ecc/galoisField";
-
 import { DEFAULT_ECC_BYTES } from "@/constants";
+import { EXP_TABLE, generatorPoly, gfDiv, gfInverse, gfMul } from "@/ecc/galoisField";
 
 /** Encodes data with Reed-Solomon error correction parity bytes. */
 export function rsEncode(data: Uint8Array, eccBytes = DEFAULT_ECC_BYTES): Uint8Array {

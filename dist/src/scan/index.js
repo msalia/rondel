@@ -11,10 +11,10 @@ exports.processFrame = processFrame;
 const constants_1 = require("../constants");
 const decoder_1 = require("../core/decoder");
 const detector_1 = require("../ml/detector");
+const centerRefine_1 = require("./centerRefine");
 const consensus_1 = require("./consensus");
 const detector_2 = require("./detector");
 const frameScorer_1 = require("./frameScorer");
-const centerRefine_1 = require("./centerRefine");
 const orientationAnalyzer_1 = require("./orientationAnalyzer");
 const perspective_1 = require("./perspective");
 const sampler_1 = require("./sampler");
@@ -118,7 +118,7 @@ function scanFrame(source, options = {}) {
 }
 /** Rectifies, validates, samples, and decodes a code from a frame. Throws if invalid. */
 function sampleAndDecode(frame, detection, rings, segmentsPerRing, eccBytes, outputSize = constants_1.DEFAULT_CODE_SIZE) {
-    const { image: rectified, validation, orientation, center } = rectifyCode(frame, detection, rings, outputSize, segmentsPerRing);
+    const { image: rectified, validation, orientation, center, } = rectifyCode(frame, detection, rings, outputSize, segmentsPerRing);
     if (!validation.valid) {
         throw new Error(`Not a circular code (score=${validation.score.toFixed(2)})`);
     }
@@ -170,7 +170,7 @@ async function scanFromVideo(video, options = {}) {
 }
 /** Processes a single video frame and returns a ScanResult if the code was decoded. */
 function processFrame(video, options = {}) {
-    const { rings = constants_1.DEFAULT_RINGS, segmentsPerRing = constants_1.DEFAULT_SEGMENTS_PER_RING, eccBytes = constants_1.DEFAULT_ECC_BYTES, minFrameScore = constants_1.DEFAULT_MIN_FRAME_SCORE } = options;
+    const { rings = constants_1.DEFAULT_RINGS, segmentsPerRing = constants_1.DEFAULT_SEGMENTS_PER_RING, eccBytes = constants_1.DEFAULT_ECC_BYTES, minFrameScore = constants_1.DEFAULT_MIN_FRAME_SCORE, } = options;
     const result = scanFrame(video, { rings, segmentsPerRing, eccBytes });
     if (result.decoded && result.frameScore.overall >= minFrameScore) {
         return {

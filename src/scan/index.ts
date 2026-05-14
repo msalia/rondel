@@ -27,16 +27,20 @@ import {
 } from "@/constants";
 import { decode } from "@/core/decoder";
 import { detectWithModel, isModelLoaded, loadModel } from "@/ml/detector";
+import { refineCenterFromDot } from "@/scan/centerRefine";
 import { MultiFrameConsensus } from "@/scan/consensus";
 import { detectCircle } from "@/scan/detector";
 import { scoreFrame } from "@/scan/frameScorer";
-import { refineCenterFromDot } from "@/scan/centerRefine";
 import { analyzeOrientation } from "@/scan/orientationAnalyzer";
 import { estimateCircleCorners, warpPerspective } from "@/scan/perspective";
 import { samplePolarGrid } from "@/scan/sampler";
 import { validateCircularCode } from "@/scan/validator";
-import { canvasToBuffer, captureFrameToBuffer, flipBufferHorizontal, toGrayscale } from "@/utils/image";
-
+import {
+  canvasToBuffer,
+  captureFrameToBuffer,
+  flipBufferHorizontal,
+  toGrayscale,
+} from "@/utils/image";
 
 /** Detects a circular code in an image buffer using ML or Hough fallback. */
 export function detectCode(buf: ImageBuffer): DetectionResult {
@@ -49,7 +53,10 @@ export function detectCode(buf: ImageBuffer): DetectionResult {
 
 /** Returns model-predicted corners or estimates them from detection geometry.
  *  Ensures clockwise winding (TL→TR→BR→BL in screen coords) to prevent reflected warps. */
-export function resolveCorners(detection: DetectionResult, padding = DEFAULT_CORNER_PADDING): Point[] {
+export function resolveCorners(
+  detection: DetectionResult,
+  padding = DEFAULT_CORNER_PADDING,
+): Point[] {
   let corners: Point[];
   if (detection.corners && detection.corners.length === 4) {
     corners = detection.corners;
@@ -66,8 +73,7 @@ export function resolveCorners(detection: DetectionResult, padding = DEFAULT_COR
   // Check winding order via cross product of edge vectors from corner 0.
   // For clockwise winding in screen coords (y-down), cross product should be positive.
   const [c0, c1, , c3] = corners;
-  const cross =
-    (c1.x - c0.x) * (c3.y - c0.y) - (c1.y - c0.y) * (c3.x - c0.x);
+  const cross = (c1.x - c0.x) * (c3.y - c0.y) - (c1.y - c0.y) * (c3.x - c0.x);
   if (cross < 0) {
     corners = [corners[0], corners[3], corners[2], corners[1]];
   }
@@ -79,7 +85,6 @@ export function resolveCorners(detection: DetectionResult, padding = DEFAULT_COR
 export function flipHorizontal(buf: ImageBuffer): ImageBuffer {
   return flipBufferHorizontal(buf);
 }
-
 
 /** Warps, de-reflects, validates, and analyzes orientation of a detected code. */
 export function rectifyCode(
@@ -94,9 +99,25 @@ export function rectifyCode(
   const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
 
   const center = refineCenterFromDot(rectified, rings, outputSize, gray);
-  const orientation = analyzeOrientation(rectified, rings, outputSize, 360, center.cx, center.cy, segmentsPerRing, gray);
+  const orientation = analyzeOrientation(
+    rectified,
+    rings,
+    outputSize,
+    360,
+    center.cx,
+    center.cy,
+    segmentsPerRing,
+    gray,
+  );
 
-  const validation = validateCircularCode(rectified, rings, outputSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
+  const validation = validateCircularCode(
+    rectified,
+    rings,
+    outputSize,
+    CONFIDENCE_THRESHOLD,
+    segmentsPerRing,
+    gray,
+  );
 
   return { image: rectified, corners, validation, orientation, center };
 }
@@ -137,9 +158,25 @@ export function scanFrame(
   const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
   const center = refineCenterFromDot(rectified, rings, codeSize, gray);
 
-  const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing, gray);
+  const orientation = analyzeOrientation(
+    rectified,
+    rings,
+    codeSize,
+    360,
+    center.cx,
+    center.cy,
+    segmentsPerRing,
+    gray,
+  );
 
-  const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
+  const validation = validateCircularCode(
+    rectified,
+    rings,
+    codeSize,
+    CONFIDENCE_THRESHOLD,
+    segmentsPerRing,
+    gray,
+  );
   const frameScoreResult = scoreFrame(
     captured,
     activeDetection.cx,
@@ -195,13 +232,12 @@ export function sampleAndDecode(
   eccBytes: number,
   outputSize = DEFAULT_CODE_SIZE,
 ): string {
-  const { image: rectified, validation, orientation, center } = rectifyCode(
-    frame,
-    detection,
-    rings,
-    outputSize,
-    segmentsPerRing,
-  );
+  const {
+    image: rectified,
+    validation,
+    orientation,
+    center,
+  } = rectifyCode(frame, detection, rings, outputSize, segmentsPerRing);
 
   if (!validation.valid) {
     throw new Error(`Not a circular code (score=${validation.score.toFixed(2)})`);
@@ -292,7 +328,12 @@ export function processFrame(
     minFrameScore?: number;
   } = {},
 ): ScanResult | null {
-  const { rings = DEFAULT_RINGS, segmentsPerRing = DEFAULT_SEGMENTS_PER_RING, eccBytes = DEFAULT_ECC_BYTES, minFrameScore = DEFAULT_MIN_FRAME_SCORE } = options;
+  const {
+    rings = DEFAULT_RINGS,
+    segmentsPerRing = DEFAULT_SEGMENTS_PER_RING,
+    eccBytes = DEFAULT_ECC_BYTES,
+    minFrameScore = DEFAULT_MIN_FRAME_SCORE,
+  } = options;
 
   const result = scanFrame(video, { rings, segmentsPerRing, eccBytes });
 

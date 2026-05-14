@@ -18,8 +18,10 @@ export function refineCenterFromDot(
   const dotRadius = ringWidth * 0.75;
   const searchRadius = Math.ceil(dotRadius * 2);
 
-  let innerSum = 0, innerN = 0;
-  let outerSum = 0, outerN = 0;
+  let innerSum = 0,
+    innerN = 0;
+  let outerSum = 0,
+    outerN = 0;
 
   for (let dy = -searchRadius; dy <= searchRadius; dy++) {
     for (let dx = -searchRadius; dx <= searchRadius; dx++) {
@@ -53,7 +55,9 @@ export function refineCenterFromDot(
   const dotIsDark = innerAvg < outerAvg;
   const threshold = (innerAvg + outerAvg) / 2;
 
-  let sumX = 0, sumY = 0, weight = 0;
+  let sumX = 0,
+    sumY = 0,
+    weight = 0;
   for (let dy = -searchRadius; dy <= searchRadius; dy++) {
     for (let dx = -searchRadius; dx <= searchRadius; dx++) {
       if (dx * dx + dy * dy > searchRadius * searchRadius) continue;

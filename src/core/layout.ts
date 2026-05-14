@@ -11,7 +11,6 @@ export function getOrientationRingRadius(rings: number, size: number): number {
   return (rings + 1) * getRingWidth(rings, size);
 }
 
-
 /** An arc defined by start and end angles in radians. */
 export type OrientationArc = { start: number; end: number };
 
@@ -52,8 +51,8 @@ export function getOrientationArcs(
   const minFinalGap = 2;
   const availableForArcs = totalBits - usedBits - SEPARATOR_BITS * 2 - minFinalGap;
 
-  const largeBits = Math.floor(availableForArcs * 4 / 7);
-  const mediumBits = Math.floor(availableForArcs * 2 / 7);
+  const largeBits = Math.floor((availableForArcs * 4) / 7);
+  const mediumBits = Math.floor((availableForArcs * 2) / 7);
   const shortBits = Math.max(3, availableForArcs - largeBits - mediumBits);
 
   arcs.push({

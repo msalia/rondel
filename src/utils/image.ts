@@ -27,7 +27,10 @@ export function bufferToCanvas(buf: ImageBuffer): HTMLCanvasElement {
 }
 
 /** Captures a square center-cropped frame from a video element onto a canvas. */
-export function captureFrame(video: HTMLVideoElement, targetSize = DEFAULT_CAPTURE_SIZE): HTMLCanvasElement {
+export function captureFrame(
+  video: HTMLVideoElement,
+  targetSize = DEFAULT_CAPTURE_SIZE,
+): HTMLCanvasElement {
   const { canvas, ctx } = getOrCreateCanvas(targetSize, "captureFrame", {
     willReadFrequently: true,
   });
@@ -42,7 +45,10 @@ export function captureFrame(video: HTMLVideoElement, targetSize = DEFAULT_CAPTU
 }
 
 /** Captures a video frame and returns it as an ImageBuffer. */
-export function captureFrameToBuffer(video: HTMLVideoElement, targetSize = DEFAULT_CAPTURE_SIZE): ImageBuffer {
+export function captureFrameToBuffer(
+  video: HTMLVideoElement,
+  targetSize = DEFAULT_CAPTURE_SIZE,
+): ImageBuffer {
   const canvas = captureFrame(video, targetSize);
   return canvasToBuffer(canvas);
 }
@@ -95,7 +101,13 @@ export function getPixelBrightness(
 }
 
 /** Samples grayscale from a pre-computed grayscale array, returning fallback if out of bounds. */
-export function sampleGray(gray: Uint8Array, width: number, x: number, y: number, fallback = 128): number {
+export function sampleGray(
+  gray: Uint8Array,
+  width: number,
+  x: number,
+  y: number,
+  fallback = 128,
+): number {
   const ix = Math.round(x);
   const iy = Math.round(y);
   if (ix < 0 || ix >= width || iy < 0 || iy >= gray.length / width) return fallback;

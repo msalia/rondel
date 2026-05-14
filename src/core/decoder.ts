@@ -1,5 +1,5 @@
-import { bitsToBytes } from "@/core/bitstream";
 import { DEFAULT_ECC_BYTES } from "@/constants";
+import { bitsToBytes } from "@/core/bitstream";
 import { Mode, unpackAlphanumeric, unpackNumeric } from "@/core/modes";
 import { rsDecode } from "@/ecc/reedSolomon";
 

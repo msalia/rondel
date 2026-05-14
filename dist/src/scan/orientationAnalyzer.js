@@ -20,7 +20,7 @@ function analyzeOrientation(buf, rings, size, numSamples = 360, centerX, centerY
         start: arcs[0].start - capAngle,
         end: arcs[2].end + capAngle,
     };
-    const orientArcs = arcs.slice(3).map(a => ({
+    const orientArcs = arcs.slice(3).map((a) => ({
         start: a.start - capAngle,
         end: a.end + capAngle,
     }));

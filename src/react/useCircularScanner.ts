@@ -2,7 +2,11 @@ import type { ConsensusResult, ScanOptions } from "@/types";
 
 import { useEffect, useRef, useState } from "react";
 
-import { DEFAULT_CONSENSUS_REQUIRED, DEFAULT_CONSENSUS_SIZE, DEFAULT_MIN_FRAME_SCORE } from "@/constants";
+import {
+  DEFAULT_CONSENSUS_REQUIRED,
+  DEFAULT_CONSENSUS_SIZE,
+  DEFAULT_MIN_FRAME_SCORE,
+} from "@/constants";
 import { isModelLoaded, loadModel } from "@/ml/detector";
 import { scanFrame } from "@/scan";
 import { MultiFrameConsensus } from "@/scan/consensus";

@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.decode = decode;
-const bitstream_1 = require("./bitstream");
 const constants_1 = require("../constants");
+const bitstream_1 = require("./bitstream");
 const modes_1 = require("./modes");
 const reedSolomon_1 = require("../ecc/reedSolomon");
 /** Decodes a bit array back into a string using Reed-Solomon error correction.

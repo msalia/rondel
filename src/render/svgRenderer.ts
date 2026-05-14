@@ -26,7 +26,14 @@ export type SVGRenderOptions = {
   secondary?: string;
 };
 
-function svgArc(cx: number, cy: number, radius: number, start: number, end: number, strokeWidth: number): string {
+function svgArc(
+  cx: number,
+  cy: number,
+  radius: number,
+  start: number,
+  end: number,
+  strokeWidth: number,
+): string {
   const sweep = end - start;
   if (sweep <= 0) return "";
   const largeArc = sweep > Math.PI ? 1 : 0;
@@ -44,7 +51,10 @@ function findPrimaryRuns(ringBits: number[], segs: number): ArcRun[] {
   const runs: ArcRun[] = [];
   let i = 0;
   while (i < segs) {
-    if (!ringBits[i]) { i++; continue; }
+    if (!ringBits[i]) {
+      i++;
+      continue;
+    }
     let runEnd = i + 1;
     while (runEnd < segs && ringBits[runEnd]) runEnd++;
     runs.push({ startSeg: i, runLen: runEnd - i });
@@ -92,9 +102,10 @@ function renderDataRings(
         const cur = primaryArcs[j];
         const next = primaryArcs[(j + 1) % primaryArcs.length];
         const gapStartSeg = cur.startSeg + cur.runLen + SECONDARY_SEPARATION;
-        const gapEndSeg = j + 1 < primaryArcs.length
-          ? next.startSeg - SECONDARY_SEPARATION
-          : next.startSeg + segs - SECONDARY_SEPARATION;
+        const gapEndSeg =
+          j + 1 < primaryArcs.length
+            ? next.startSeg - SECONDARY_SEPARATION
+            : next.startSeg + segs - SECONDARY_SEPARATION;
         const gapLen = gapEndSeg - gapStartSeg;
         if (gapLen < 1) continue;
         const start = getSegmentAngle(gapStartSeg % segs, segs);
@@ -139,7 +150,15 @@ export function renderSVG(code: EncodedCode, opts: SVGRenderOptions | number = {
   const strokeWidth = ringWidth * STROKE_WIDTH_RATIO;
   const centerRadius = ringWidth * CENTER_RADIUS_RATIO;
 
-  const { primaryPaths, secondaryPaths } = renderDataRings(bits, rings, segmentsPerRing, cx, cy, size, strokeWidth);
+  const { primaryPaths, secondaryPaths } = renderDataRings(
+    bits,
+    rings,
+    segmentsPerRing,
+    cx,
+    cy,
+    size,
+    strokeWidth,
+  );
   const orientationPaths = renderOrientationRing(rings, segmentsPerRing, cx, cy, size, strokeWidth);
 
   return `

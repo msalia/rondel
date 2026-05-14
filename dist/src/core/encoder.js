@@ -1,15 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.encode = encode;
-const bitstream_1 = require("./bitstream");
 const constants_1 = require("../constants");
+const bitstream_1 = require("./bitstream");
 const layout_1 = require("./layout");
 const modes_1 = require("./modes");
 const reedSolomon_1 = require("../ecc/reedSolomon");
 /** Encodes a string into a circular code with Reed-Solomon error correction.
  *  Automatically selects the most efficient encoding mode (numeric, alphanumeric, or byte). */
 function encode(input, opts = {}) {
-    const { rings = constants_1.DEFAULT_RINGS, segmentsPerRing = constants_1.DEFAULT_SEGMENTS_PER_RING, eccBytes = constants_1.DEFAULT_ECC_BYTES } = opts;
+    const { rings = constants_1.DEFAULT_RINGS, segmentsPerRing = constants_1.DEFAULT_SEGMENTS_PER_RING, eccBytes = constants_1.DEFAULT_ECC_BYTES, } = opts;
     const mode = (0, modes_1.detectMode)(input);
     let packedData;
     if (mode === modes_1.Mode.NUMERIC) {
@@ -38,9 +38,7 @@ function encode(input, opts = {}) {
     const capacity = (0, layout_1.getTotalSegments)(rings, segmentsPerRing);
     if (bits.length > capacity) {
         const availBytes = Math.floor(capacity / 8) - eccBytes - 2;
-        const maxChars = mode === modes_1.Mode.BYTE
-            ? availBytes
-            : estimateMaxChars(availBytes, mode);
+        const maxChars = mode === modes_1.Mode.BYTE ? availBytes : estimateMaxChars(availBytes, mode);
         throw new Error(`Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxChars)} chars (${modeName(mode)} mode) with ${eccBytes} ECC bytes.`);
     }
     return { bits, rings, segmentsPerRing };

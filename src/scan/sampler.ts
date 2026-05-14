@@ -46,7 +46,14 @@ export function samplePolarGrid(
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
         for (const sr of [innerRadius, centerRadius, outerRadius]) {
-          const b = getPixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
+          const b = getPixelBrightness(
+            data,
+            width,
+            height,
+            cx + sr * cosA,
+            cy + sr * sinA,
+            bgBrightness,
+          );
           if (b >= 0) {
             sum += b;
             count++;
@@ -68,13 +75,11 @@ export function samplePolarGrid(
         splitIdx = i;
       }
     }
-    const threshold = maxGap > 30
-      ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2
-      : 128;
+    const threshold = maxGap > 30 ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2 : 128;
 
     for (let segment = 0; segment < segs; segment++) {
       const dark = ringBrightness[segment] < threshold;
-      bits.push((dark !== inverted) ? 1 : 0);
+      bits.push(dark !== inverted ? 1 : 0);
     }
   }
 

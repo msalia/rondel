@@ -32,7 +32,7 @@ export function analyzeOrientation(
     start: arcs[0].start - capAngle,
     end: arcs[2].end + capAngle,
   };
-  const orientArcs = arcs.slice(3).map(a => ({
+  const orientArcs = arcs.slice(3).map((a) => ({
     start: a.start - capAngle,
     end: a.end + capAngle,
   }));
@@ -105,12 +105,16 @@ export function analyzeOrientation(
   }
 
   const normContrast = arcContrast(
-    samples, bestNormRefl ? expectedDarkRefl : expectedDark,
-    Math.round((bestNormAngle / (2 * Math.PI)) * numSamples), numSamples,
+    samples,
+    bestNormRefl ? expectedDarkRefl : expectedDark,
+    Math.round((bestNormAngle / (2 * Math.PI)) * numSamples),
+    numSamples,
   );
   const invContrast = arcContrast(
-    samples, bestInvRefl ? expectedDarkRefl : expectedDark,
-    Math.round((bestInvAngle / (2 * Math.PI)) * numSamples), numSamples,
+    samples,
+    bestInvRefl ? expectedDarkRefl : expectedDark,
+    Math.round((bestInvAngle / (2 * Math.PI)) * numSamples),
+    numSamples,
   );
 
   const MIN_CONTRAST = 20;
@@ -135,8 +139,10 @@ function arcContrast(
   offset: number,
   numSamples: number,
 ): number {
-  let arcSum = 0, arcN = 0;
-  let gapSum = 0, gapN = 0;
+  let arcSum = 0,
+    arcN = 0;
+  let gapSum = 0,
+    gapN = 0;
   for (let i = 0; i < numSamples; i++) {
     const si = (i + offset) % numSamples;
     if (expected[i] === 1) {

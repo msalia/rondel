@@ -48,12 +48,10 @@ function samplePolarGrid(frame, cx, cy, codeSize, rings = 5, segmentsPerRing = 4
                 splitIdx = i;
             }
         }
-        const threshold = maxGap > 30
-            ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2
-            : 128;
+        const threshold = maxGap > 30 ? (sorted[splitIdx] + sorted[splitIdx + 1]) / 2 : 128;
         for (let segment = 0; segment < segs; segment++) {
             const dark = ringBrightness[segment] < threshold;
-            bits.push((dark !== inverted) ? 1 : 0);
+            bits.push(dark !== inverted ? 1 : 0);
         }
     }
     return bits;

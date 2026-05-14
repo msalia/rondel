@@ -231,8 +231,12 @@ async function generatePositive(index, split) {
     const ctx = canvas.getContext("2d");
     const inverted = Math.random() < 0.35;
     const bgColor = inverted
-        ? (Math.random() < 0.3 ? randomDarkMutedColor() : randomColor(0, 60))
-        : (Math.random() < 0.3 ? `rgb(${randomInt(230, 255)},${randomInt(220, 250)},${randomInt(210, 245)})` : randomColor(180, 255));
+        ? Math.random() < 0.3
+            ? randomDarkMutedColor()
+            : randomColor(0, 60)
+        : Math.random() < 0.3
+            ? `rgb(${randomInt(230, 255)},${randomInt(220, 250)},${randomInt(210, 245)})`
+            : randomColor(180, 255);
     ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, SIZE, SIZE);
     addBackgroundNoise(ctx, SIZE, SIZE);

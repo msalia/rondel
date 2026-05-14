@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rsEncode = rsEncode;
 exports.rsDecode = rsDecode;
-const galoisField_1 = require("./galoisField");
 const constants_1 = require("../constants");
+const galoisField_1 = require("./galoisField");
 /** Encodes data with Reed-Solomon error correction parity bytes. */
 function rsEncode(data, eccBytes = constants_1.DEFAULT_ECC_BYTES) {
     const gen = (0, galoisField_1.generatorPoly)(eccBytes);

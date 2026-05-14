@@ -12,7 +12,7 @@ export {
   SCAN_TIMEOUT_MS,
 } from "@/constants";
 export { encode } from "@/core/encoder";
-export { Mode, detectMode } from "@/core/modes";
+export { detectMode, Mode } from "@/core/modes";
 export { decode } from "@/core/decoder";
 export { bitsToBytes, bytesToBits } from "@/core/bitstream";
 export { rsDecode, rsEncode } from "@/ecc/reedSolomon";
