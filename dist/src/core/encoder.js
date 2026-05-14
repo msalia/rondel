@@ -2,14 +2,41 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.encode = encode;
 const constants_1 = require("../constants");
+const autoSize_1 = require("./autoSize");
 const bitstream_1 = require("./bitstream");
 const layout_1 = require("./layout");
 const modes_1 = require("./modes");
 const reedSolomon_1 = require("../ecc/reedSolomon");
 /** Encodes a string into a circular code with Reed-Solomon error correction.
- *  Automatically selects the most efficient encoding mode (numeric, alphanumeric, or byte). */
+ *  Automatically selects the most efficient encoding mode (numeric, alphanumeric, or byte).
+ *  When rings/segments/eccBytes are omitted, auto-selects the smallest grid with
+ *  optimal error correction that fits the input. */
 function encode(input, opts = {}) {
-    const { rings = constants_1.DEFAULT_RINGS, segmentsPerRing = constants_1.DEFAULT_SEGMENTS_PER_RING, eccBytes = constants_1.DEFAULT_ECC_BYTES, } = opts;
+    let rings;
+    let segmentsPerRing;
+    let eccBytes;
+    if (opts.rings != null && opts.segmentsPerRing != null && opts.eccBytes != null) {
+        rings = opts.rings;
+        segmentsPerRing = opts.segmentsPerRing;
+        eccBytes = opts.eccBytes;
+    }
+    else if (opts.rings != null) {
+        rings = opts.rings;
+        segmentsPerRing = opts.segmentsPerRing ?? constants_1.DEFAULT_SEGMENTS_PER_RING;
+        eccBytes = opts.eccBytes ?? constants_1.DEFAULT_ECC_BYTES;
+    }
+    else {
+        const sized = (0, autoSize_1.autoSize)(input, {
+            segmentsPerRing: opts.segmentsPerRing,
+            eccBytes: opts.eccBytes,
+        });
+        if (!sized) {
+            throw new Error(`Input too large for any supported grid (max 16 rings). Try fewer ECC bytes or more segments.`);
+        }
+        rings = sized.rings;
+        segmentsPerRing = sized.segmentsPerRing;
+        eccBytes = sized.eccBytes;
+    }
     const mode = (0, modes_1.detectMode)(input);
     let packedData;
     if (mode === modes_1.Mode.NUMERIC) {
@@ -21,15 +48,24 @@ function encode(input, opts = {}) {
     else {
         packedData = new TextEncoder().encode(input);
     }
-    // Version 2 header: [version, (modeField << 6) | count]
-    // modeField: 0=numeric, 1=alphanumeric, 2=byte, 3=alphanumeric+lowercase
-    // count: char count for numeric/alphanumeric, byte count for byte mode
     let modeField = mode;
     if (mode === modes_1.Mode.ALPHANUMERIC && (0, modes_1.isAllLowercase)(input)) {
         modeField = 3;
     }
     const count = mode === modes_1.Mode.BYTE ? packedData.length : input.length;
-    const header = new Uint8Array([2, (modeField << 6) | (count & 0x3f)]);
+    // V3 header: [version=3, (modeField<<6)|countLow, optional extendedCount]
+    // count <= 62: 2-byte header (countLow = count)
+    // count > 62:  3-byte header (countLow = 0x3F sentinel, byte 2 = actual count)
+    let header;
+    if (count <= 62) {
+        header = new Uint8Array([3, (modeField << 6) | count]);
+    }
+    else {
+        if (count > 255) {
+            throw new Error(`Count too large: ${count}. Maximum is 255.`);
+        }
+        header = new Uint8Array([3, (modeField << 6) | 0x3f, count]);
+    }
     const payload = new Uint8Array(header.length + packedData.length);
     payload.set(header);
     payload.set(packedData, header.length);
@@ -37,11 +73,12 @@ function encode(input, opts = {}) {
     const bits = (0, bitstream_1.bytesToBits)(encoded);
     const capacity = (0, layout_1.getTotalSegments)(rings, segmentsPerRing);
     if (bits.length > capacity) {
-        const availBytes = Math.floor(capacity / 8) - eccBytes - 2;
+        const headerBytes = header.length;
+        const availBytes = Math.floor(capacity / 8) - eccBytes - headerBytes;
         const maxChars = mode === modes_1.Mode.BYTE ? availBytes : estimateMaxChars(availBytes, mode);
         throw new Error(`Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxChars)} chars (${modeName(mode)} mode) with ${eccBytes} ECC bytes.`);
     }
-    return { bits, rings, segmentsPerRing };
+    return { bits, rings, segmentsPerRing, eccBytes };
 }
 function estimateMaxChars(availBytes, mode) {
     const availBits = availBytes * 8;

@@ -1,4 +1,9 @@
 export {
+  AUTO_MAX_ECC,
+  AUTO_MAX_RINGS,
+  AUTO_MIN_ECC,
+  AUTO_MIN_RINGS,
+  AUTO_SEGMENT_CANDIDATES,
   CONFIDENCE_THRESHOLD,
   DEFAULT_CAPTURE_SIZE,
   DEFAULT_CODE_SIZE,
@@ -12,6 +17,8 @@ export {
   SCAN_TIMEOUT_MS,
 } from "@/constants";
 export { encode } from "@/core/encoder";
+export { autoSize, computeDataBytes, computeNeededBits, minRingsForBits } from "@/core/autoSize";
+export type { AutoSizeResult } from "@/core/autoSize";
 export { detectMode, Mode } from "@/core/modes";
 export { decode } from "@/core/decoder";
 export { bitsToBytes, bytesToBits } from "@/core/bitstream";

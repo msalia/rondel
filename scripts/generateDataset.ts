@@ -5,6 +5,13 @@ import path from "path";
 
 import { type Canvas, type CanvasRenderingContext2D, createCanvas, loadImage } from "canvas";
 
+import {
+  AUTO_MAX_ECC,
+  AUTO_MAX_RINGS,
+  AUTO_MIN_ECC,
+  AUTO_MIN_RINGS,
+  AUTO_SEGMENT_CANDIDATES,
+} from "@/constants";
 import { encode } from "@/core/encoder";
 import { renderSVG } from "@/render/svgRenderer";
 
@@ -307,9 +314,10 @@ async function generatePositive(index: number, split: "train" | "val"): Promise<
   let code: EncodedCode;
   for (;;) {
     try {
-      const rings = randomInt(3, 6);
-      const segmentsPerRing = [32, 48, 64][randomInt(0, 2)];
-      const eccBytes = [4, 8, 16][randomInt(0, 2)];
+      const rings = randomInt(AUTO_MIN_RINGS, AUTO_MAX_RINGS);
+      const segmentsPerRing =
+        AUTO_SEGMENT_CANDIDATES[randomInt(0, AUTO_SEGMENT_CANDIDATES.length - 1)];
+      const eccBytes = randomInt(AUTO_MIN_ECC, AUTO_MAX_ECC);
       code = encode(randomString(), { rings, segmentsPerRing, eccBytes });
       break;
     } catch {

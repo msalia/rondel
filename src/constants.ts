@@ -30,3 +30,18 @@ export const DEFAULT_CONSENSUS_REQUIRED = 3;
 
 /** Video scan timeout in milliseconds. */
 export const SCAN_TIMEOUT_MS = 30_000;
+
+/** Auto-sizing: minimum number of rings. */
+export const AUTO_MIN_RINGS = 4;
+
+/** Auto-sizing: maximum number of rings. */
+export const AUTO_MAX_RINGS = 8;
+
+/** Auto-sizing: minimum ECC bytes. */
+export const AUTO_MIN_ECC = 2;
+
+/** Auto-sizing: maximum ECC bytes. */
+export const AUTO_MAX_ECC = 8;
+
+/** Auto-sizing: segment counts to search across. */
+export const AUTO_SEGMENT_CANDIDATES = [32, 48] as const;

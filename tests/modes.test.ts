@@ -159,11 +159,82 @@ describe("encode/decode roundtrip with modes", () => {
   });
 
   it("encodes a long URL that would not fit in byte mode", () => {
-    // 14 chars fits in alphanumeric but not byte mode (10 char limit with 4 ECC)
     const input = "ex.co/abcdefgh";
     expect(input.length).toBe(14);
     const code = encode(input, { eccBytes: ECC });
     const result = decode(code.bits, ECC);
     expect(result).toBe(input);
+  });
+});
+
+describe("V3 header", () => {
+  it("uses V3 version byte", () => {
+    const code = encode("test", { eccBytes: 4 });
+    expect(code.bits[0]).toBe(0);
+    expect(code.bits[1]).toBe(0);
+    expect(code.bits[2]).toBe(0);
+    expect(code.bits[3]).toBe(0);
+    expect(code.bits[4]).toBe(0);
+    expect(code.bits[5]).toBe(0);
+    expect(code.bits[6]).toBe(1);
+    expect(code.bits[7]).toBe(1); // version = 3 = 0b00000011
+  });
+
+  it("short count uses 2-byte header", () => {
+    const input = "hello";
+    const code = encode(input, { rings: 8, segmentsPerRing: 48, eccBytes: 4 });
+    const result = decode(code.bits, 4);
+    expect(result).toBe(input);
+  });
+
+  it("extended count roundtrips for strings > 62 chars", () => {
+    const input = "abcdefghij".repeat(7);
+    expect(input.length).toBe(70);
+    expect(input.length).toBeGreaterThan(62);
+    const code = encode(input, { rings: 16, segmentsPerRing: 128, eccBytes: 4 });
+    const result = decode(code.bits, 4);
+    expect(result).toBe(input);
+  });
+
+  it("numeric mode roundtrips with extended count", () => {
+    const input = "1234567890".repeat(7);
+    expect(input.length).toBe(70);
+    expect(input.length).toBeGreaterThan(62);
+    const code = encode(input, { rings: 16, segmentsPerRing: 80, eccBytes: 4 });
+    const result = decode(code.bits, 4);
+    expect(result).toBe(input);
+  });
+
+  it("alphanumeric mode roundtrips with extended count", () => {
+    const input = "ABCDEFGHIJ".repeat(7);
+    expect(input.length).toBe(70);
+    const code = encode(input, { rings: 16, segmentsPerRing: 80, eccBytes: 4 });
+    const result = decode(code.bits, 4);
+    expect(result).toBe(input);
+  });
+});
+
+describe("bit-aligned grid", () => {
+  it("total segments is always a multiple of 8", () => {
+    for (const rings of [3, 4, 5, 6, 7, 8]) {
+      for (const segs of [32, 48, 64, 80]) {
+        const total = getTotalSegments(rings, segs);
+        expect(total % 8).toBe(0);
+      }
+    }
+  });
+
+  it("bit-aligned grid has at least as many segments as unaligned", () => {
+    for (const rings of [3, 4, 5, 6, 7, 8]) {
+      for (const segs of [32, 48, 64, 80]) {
+        const total = getTotalSegments(rings, segs);
+        let rawTotal = 0;
+        for (let r = 1; r < rings; r++) {
+          rawTotal += Math.max(8, Math.round((segs * (r + 1)) / rings));
+        }
+        expect(total).toBeGreaterThanOrEqual(rawTotal);
+        expect(total - rawTotal).toBeLessThan(8);
+      }
+    }
   });
 });

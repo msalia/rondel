@@ -39,7 +39,9 @@ export declare function getBitArcLength(rings: number, size: number, baseSegment
 export declare function getSegmentAngle(segment: number, segmentsInRing: number): number;
 /** Returns true if the given ring index carries data (not the center dot). */
 export declare function isDataRing(ring: number): boolean;
-/** Returns the number of segments in a ring, scaling with ring radius. */
+/** Returns the number of segments in a ring, scaling with ring radius.
+ *  The outermost data ring is padded so the total across all data rings
+ *  is a multiple of 8, eliminating wasted trailing bits. */
 export declare function getSegmentsForRing(ring: number, rings: number, baseSegments: number): number;
-/** Returns the total number of data segments across all data rings. */
+/** Returns the total number of data segments across all data rings (always a multiple of 8). */
 export declare function getTotalSegments(rings: number, baseSegments: number): number;

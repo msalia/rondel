@@ -50,7 +50,15 @@ describe("encode/decode", () => {
     expect(code.bits.length % 8).toBe(0);
   });
 
-  it("throws when data exceeds grid capacity", () => {
-    expect(() => encode("this string is way too long for the grid and will never fit", { eccBytes: ECC })).toThrow("Data too large");
+  it("throws when data exceeds explicit grid capacity", () => {
+    expect(() => encode("this string is way too long for the grid", { rings: 3, eccBytes: ECC })).toThrow("Data too large");
+  });
+
+  it("auto-sizes when rings is omitted", () => {
+    const input = "hello world test";
+    const code = encode(input, { eccBytes: ECC });
+    const output = decode(code.bits, ECC);
+    expect(output).toBe(input);
+    expect(code.rings).toBeGreaterThanOrEqual(4);
   });
 });

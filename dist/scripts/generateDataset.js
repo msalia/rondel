@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const canvas_1 = require("canvas");
+const constants_1 = require("../src/constants");
 const encoder_1 = require("../src/core/encoder");
 const svgRenderer_1 = require("../src/render/svgRenderer");
 const OUT_DIR = "./dataset";
@@ -243,9 +244,9 @@ async function generatePositive(index, split) {
     let code;
     for (;;) {
         try {
-            const rings = randomInt(3, 6);
-            const segmentsPerRing = [32, 48, 64][randomInt(0, 2)];
-            const eccBytes = [4, 8, 16][randomInt(0, 2)];
+            const rings = randomInt(constants_1.AUTO_MIN_RINGS, constants_1.AUTO_MAX_RINGS);
+            const segmentsPerRing = constants_1.AUTO_SEGMENT_CANDIDATES[randomInt(0, constants_1.AUTO_SEGMENT_CANDIDATES.length - 1)];
+            const eccBytes = randomInt(constants_1.AUTO_MIN_ECC, constants_1.AUTO_MAX_ECC);
             code = (0, encoder_1.encode)(randomString(), { rings, segmentsPerRing, eccBytes });
             break;
         }

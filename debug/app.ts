@@ -40,14 +40,18 @@ function generate() {
   const text = textInput.value;
   if (!text) return;
 
-  const rings = parseInt(optRings.value);
-  const segmentsPerRing = parseInt(optSegments.value);
-  const eccBytes = parseInt(optEcc.value);
+  const ringsVal = optRings.value;
+  const segsVal = optSegments.value;
+  const eccVal = optEcc.value;
   const size = parseInt(optSize.value) || 400;
   lastSize = size;
 
   try {
-    const code = encode(text, { rings, segmentsPerRing, eccBytes });
+    const opts: Record<string, number> = {};
+    if (ringsVal !== "auto") opts.rings = parseInt(ringsVal);
+    if (segsVal !== "auto") opts.segmentsPerRing = parseInt(segsVal);
+    if (eccVal !== "auto") opts.eccBytes = parseInt(eccVal);
+    const code = encode(text, opts);
     lastCode = code;
 
     const primary = inverted ? "#ffffff" : "#000000";
@@ -60,19 +64,21 @@ function generate() {
     codeOutput.style.background = inverted ? "#111" : "#fff";
     downloadRow.style.display = "flex";
 
-    const decoded = decode(code.bits, eccBytes);
+    const decoded = decode(code.bits, code.eccBytes);
     decodeResult.textContent = decoded;
     decodeResult.className = "decode-result " + (decoded === text ? "success" : "error");
 
     const totalBits = code.bits.length;
-    const dataBits = totalBits - eccBytes * 8;
-    const gridSlots = getTotalSegments(rings, segmentsPerRing);
+    const dataBits = totalBits - code.eccBytes * 8;
+    const gridSlots = getTotalSegments(code.rings, code.segmentsPerRing);
+    const autoLabel = (v: string) => v === "auto" ? " ✦" : "";
 
     statsEl.innerHTML = [
-      `<div class="stat">Bits: <span>${totalBits}</span></div>`,
+      `<div class="stat">Rings: <span>${code.rings}${autoLabel(ringsVal)}</span></div>`,
+      `<div class="stat">Segs: <span>${code.segmentsPerRing}${autoLabel(segsVal)}</span></div>`,
+      `<div class="stat">Bits: <span>${totalBits}/${gridSlots}</span></div>`,
       `<div class="stat">Data: <span>${dataBits}</span></div>`,
-      `<div class="stat">ECC: <span>${eccBytes * 8}</span></div>`,
-      `<div class="stat">Grid: <span>${gridSlots} slots</span></div>`,
+      `<div class="stat">ECC: <span>${code.eccBytes}B${autoLabel(eccVal)} (corrects ${Math.floor(code.eccBytes / 2)})</span></div>`,
       `<div class="stat">Match: <span>${decoded === text ? "Yes" : "No"}</span></div>`,
     ].join("");
   } catch (e: any) {
@@ -117,11 +123,11 @@ const scanImageDebug = document.getElementById("scan-image-debug") as HTMLDivEle
 
 function scanFromImage() {
   const svgEl = codeOutput.querySelector("svg");
-  if (!svgEl) return;
+  if (!svgEl || !lastCode) return;
 
-  const rings = parseInt(optRings.value);
-  const segmentsPerRing = parseInt(optSegments.value);
-  const eccBytes = parseInt(optEcc.value);
+  const rings = lastCode.rings;
+  const segmentsPerRing = lastCode.segmentsPerRing;
+  const eccBytes = lastCode.eccBytes;
 
   const svgString = new XMLSerializer().serializeToString(svgEl);
   const img = new Image();
@@ -366,9 +372,9 @@ function scanLoop() {
   lastScanTime = now;
   frameCount++;
 
-  const rings = parseInt(optRings.value);
-  const segmentsPerRing = parseInt(optSegments.value);
-  const eccBytes = parseInt(optEcc.value);
+  const rings = lastCode?.rings ?? (parseInt(optRings.value) || 8);
+  const segmentsPerRing = lastCode?.segmentsPerRing ?? (parseInt(optSegments.value) || 48);
+  const eccBytes = lastCode?.eccBytes ?? (parseInt(optEcc.value) || 4);
 
   const captured = captureFrameToBuffer(scanVideo, 320);
   const result = scanFrame(captured, { rings, segmentsPerRing, eccBytes });

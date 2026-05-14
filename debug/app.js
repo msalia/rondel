@@ -75002,28 +75002,6 @@ return a / b;`;
     }
   });
 
-  // src/core/bitstream.ts
-  function bytesToBits(bytes) {
-    const bits = [];
-    for (const byte of bytes) {
-      for (let i = 7; i >= 0; i--) {
-        bits.push(byte >> i & 1);
-      }
-    }
-    return bits;
-  }
-  function bitsToBytes(bits) {
-    const bytes = new Uint8Array(Math.ceil(bits.length / 8));
-    for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
-      let value = 0;
-      for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
-        value = value << 1 | (bits[byteIndex * 8 + bitIndex] ?? 0);
-      }
-      bytes[byteIndex] = value;
-    }
-    return bytes;
-  }
-
   // src/constants.ts
   var DEFAULT_RINGS = 5;
   var DEFAULT_SEGMENTS_PER_RING = 48;
@@ -75095,7 +75073,16 @@ return a / b;`;
     return ring > 0;
   }
   function getSegmentsForRing(ring, rings, baseSegments) {
-    return Math.max(8, Math.round(baseSegments * (ring + 1) / rings));
+    const raw = Math.max(8, Math.round(baseSegments * (ring + 1) / rings));
+    if (ring !== rings - 1) return raw;
+    let innerTotal = 0;
+    for (let r = 0; r < rings - 1; r++) {
+      if (isDataRing(r)) {
+        innerTotal += Math.max(8, Math.round(baseSegments * (r + 1) / rings));
+      }
+    }
+    const pad2 = (8 - (innerTotal + raw) % 8) % 8;
+    return raw + pad2;
   }
   function getTotalSegments(rings, baseSegments) {
     let total = 0;
@@ -75124,6 +75111,21 @@ return a / b;`;
   }
   function isAllLowercase(input2) {
     return input2 === input2.toLowerCase() && input2 !== input2.toUpperCase();
+  }
+  function packedByteCount(charCount, mode) {
+    if (mode === Mode.NUMERIC) {
+      const fullGroups = Math.floor(charCount / 3);
+      const remainder = charCount % 3;
+      const bits = fullGroups * 10 + (remainder === 2 ? 7 : remainder === 1 ? 4 : 0);
+      return Math.ceil(bits / 8);
+    }
+    if (mode === Mode.ALPHANUMERIC) {
+      const pairs = Math.floor(charCount / 2);
+      const odd = charCount % 2;
+      const bits = pairs * 11 + odd * 6;
+      return Math.ceil(bits / 8);
+    }
+    return charCount;
   }
   function bitsToPackedBytes(bits) {
     const bytes = new Uint8Array(Math.ceil(bits.length / 8));
@@ -75209,6 +75211,130 @@ return a / b;`;
       result += ALPHANUMERIC_CHARS[val];
     }
     return result;
+  }
+
+  // src/core/autoSize.ts
+  var MIN_RINGS = 3;
+  var MAX_RINGS = 16;
+  var MIN_ECC = 4;
+  var MAX_ECC = 32;
+  var SEGMENT_CANDIDATES = [48, 64, 80];
+  function computeDataBytes(input2) {
+    const mode = detectMode(input2);
+    const count2 = mode === Mode.BYTE ? new TextEncoder().encode(input2).length : input2.length;
+    const headerBytes = count2 <= 62 ? 2 : 3;
+    const dataBytes = packedByteCount(
+      mode === Mode.BYTE ? count2 : input2.length,
+      mode
+    );
+    return headerBytes + dataBytes;
+  }
+  function minRingsForBits(neededBits, segmentsPerRing) {
+    for (let rings = MIN_RINGS; rings <= MAX_RINGS; rings++) {
+      if (getTotalSegments(rings, segmentsPerRing) >= neededBits) {
+        return rings;
+      }
+    }
+    return null;
+  }
+  function autoSize(input2, opts = {}) {
+    const dataBytes = computeDataBytes(input2);
+    if (opts.segmentsPerRing != null && opts.eccBytes != null) {
+      return autoSizeFixed(dataBytes, opts.segmentsPerRing, opts.eccBytes);
+    }
+    if (opts.segmentsPerRing != null) {
+      return autoSizeWithSegments(dataBytes, opts.segmentsPerRing);
+    }
+    if (opts.eccBytes != null) {
+      return autoSizeWithEcc(dataBytes, opts.eccBytes);
+    }
+    return autoSizeFull(dataBytes);
+  }
+  function autoSizeFixed(dataBytes, segmentsPerRing, eccBytes) {
+    const neededBits = (dataBytes + eccBytes) * 8;
+    const rings = minRingsForBits(neededBits, segmentsPerRing);
+    if (rings === null) return null;
+    const capacityBits = getTotalSegments(rings, segmentsPerRing);
+    return { rings, segmentsPerRing, eccBytes, capacityBits, usedBits: neededBits };
+  }
+  function autoSizeWithSegments(dataBytes, segmentsPerRing) {
+    const neededBits = (dataBytes + MIN_ECC) * 8;
+    const rings = minRingsForBits(neededBits, segmentsPerRing);
+    if (rings === null) return null;
+    const eccBytes = fillEcc(dataBytes, rings, segmentsPerRing);
+    const usedBits = (dataBytes + eccBytes) * 8;
+    return {
+      rings,
+      segmentsPerRing,
+      eccBytes,
+      capacityBits: getTotalSegments(rings, segmentsPerRing),
+      usedBits
+    };
+  }
+  function autoSizeWithEcc(dataBytes, eccBytes) {
+    let best = null;
+    for (const segs of SEGMENT_CANDIDATES) {
+      const neededBits = (dataBytes + eccBytes) * 8;
+      const rings = minRingsForBits(neededBits, segs);
+      if (rings === null) continue;
+      if (!best || rings < best.rings) {
+        best = {
+          rings,
+          segmentsPerRing: segs,
+          eccBytes,
+          capacityBits: getTotalSegments(rings, segs),
+          usedBits: neededBits
+        };
+      }
+    }
+    return best;
+  }
+  function autoSizeFull(dataBytes) {
+    let best = null;
+    for (const segs of SEGMENT_CANDIDATES) {
+      const minBits = (dataBytes + MIN_ECC) * 8;
+      const rings = minRingsForBits(minBits, segs);
+      if (rings === null) continue;
+      const eccBytes = fillEcc(dataBytes, rings, segs);
+      const usedBits = (dataBytes + eccBytes) * 8;
+      if (!best || rings < best.rings || rings === best.rings && eccBytes > best.eccBytes) {
+        best = {
+          rings,
+          segmentsPerRing: segs,
+          eccBytes,
+          capacityBits: getTotalSegments(rings, segs),
+          usedBits
+        };
+      }
+    }
+    return best;
+  }
+  function fillEcc(dataBytes, rings, segmentsPerRing) {
+    const totalBytes = Math.floor(getTotalSegments(rings, segmentsPerRing) / 8);
+    const spare = totalBytes - dataBytes;
+    return Math.min(Math.max(spare, MIN_ECC), MAX_ECC);
+  }
+
+  // src/core/bitstream.ts
+  function bytesToBits(bytes) {
+    const bits = [];
+    for (const byte of bytes) {
+      for (let i = 7; i >= 0; i--) {
+        bits.push(byte >> i & 1);
+      }
+    }
+    return bits;
+  }
+  function bitsToBytes(bits) {
+    const bytes = new Uint8Array(Math.ceil(bits.length / 8));
+    for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
+      let value = 0;
+      for (let bitIndex = 0; bitIndex < 8; bitIndex++) {
+        value = value << 1 | (bits[byteIndex * 8 + bitIndex] ?? 0);
+      }
+      bytes[byteIndex] = value;
+    }
+    return bytes;
   }
 
   // src/ecc/galoisField.ts
@@ -75393,7 +75519,31 @@ return a / b;`;
 
   // src/core/encoder.ts
   function encode(input2, opts = {}) {
-    const { rings = DEFAULT_RINGS, segmentsPerRing = DEFAULT_SEGMENTS_PER_RING, eccBytes = DEFAULT_ECC_BYTES } = opts;
+    let rings;
+    let segmentsPerRing;
+    let eccBytes;
+    if (opts.rings != null && opts.segmentsPerRing != null && opts.eccBytes != null) {
+      rings = opts.rings;
+      segmentsPerRing = opts.segmentsPerRing;
+      eccBytes = opts.eccBytes;
+    } else if (opts.rings != null) {
+      rings = opts.rings;
+      segmentsPerRing = opts.segmentsPerRing ?? DEFAULT_SEGMENTS_PER_RING;
+      eccBytes = opts.eccBytes ?? DEFAULT_ECC_BYTES;
+    } else {
+      const sized = autoSize(input2, {
+        segmentsPerRing: opts.segmentsPerRing,
+        eccBytes: opts.eccBytes
+      });
+      if (!sized) {
+        throw new Error(
+          `Input too large for any supported grid (max 16 rings). Try fewer ECC bytes or more segments.`
+        );
+      }
+      rings = sized.rings;
+      segmentsPerRing = sized.segmentsPerRing;
+      eccBytes = sized.eccBytes;
+    }
     const mode = detectMode(input2);
     let packedData;
     if (mode === Mode.NUMERIC) {
@@ -75408,7 +75558,15 @@ return a / b;`;
       modeField = 3;
     }
     const count2 = mode === Mode.BYTE ? packedData.length : input2.length;
-    const header = new Uint8Array([2, modeField << 6 | count2 & 63]);
+    let header;
+    if (count2 <= 62) {
+      header = new Uint8Array([3, modeField << 6 | count2]);
+    } else {
+      if (count2 > 255) {
+        throw new Error(`Count too large: ${count2}. Maximum is 255.`);
+      }
+      header = new Uint8Array([3, modeField << 6 | 63, count2]);
+    }
     const payload = new Uint8Array(header.length + packedData.length);
     payload.set(header);
     payload.set(packedData, header.length);
@@ -75416,18 +75574,21 @@ return a / b;`;
     const bits = bytesToBits(encoded);
     const capacity = getTotalSegments(rings, segmentsPerRing);
     if (bits.length > capacity) {
-      const availBytes = Math.floor(capacity / 8) - eccBytes - 2;
+      const headerBytes = header.length;
+      const availBytes = Math.floor(capacity / 8) - eccBytes - headerBytes;
       const maxChars = mode === Mode.BYTE ? availBytes : estimateMaxChars(availBytes, mode);
       throw new Error(
         `Data too large: ${bits.length} bits, grid holds ${capacity}. Max ~${Math.max(0, maxChars)} chars (${modeName(mode)} mode) with ${eccBytes} ECC bytes.`
       );
     }
-    return { bits, rings, segmentsPerRing };
+    return { bits, rings, segmentsPerRing, eccBytes };
   }
   function estimateMaxChars(availBytes, mode) {
     const availBits = availBytes * 8;
-    if (mode === Mode.NUMERIC) return Math.floor(availBits / 10) * 3 + (availBits % 10 >= 7 ? 2 : availBits % 10 >= 4 ? 1 : 0);
-    if (mode === Mode.ALPHANUMERIC) return Math.floor(availBits / 11) * 2 + (availBits % 11 >= 6 ? 1 : 0);
+    if (mode === Mode.NUMERIC)
+      return Math.floor(availBits / 10) * 3 + (availBits % 10 >= 7 ? 2 : availBits % 10 >= 4 ? 1 : 0);
+    if (mode === Mode.ALPHANUMERIC)
+      return Math.floor(availBits / 11) * 2 + (availBits % 11 >= 6 ? 1 : 0);
     return availBytes;
   }
   function modeName(mode) {
@@ -75442,31 +75603,35 @@ return a / b;`;
       throw new Error("Decoded data too short for header");
     }
     const version8 = decoded[0];
-    if (version8 === 1) {
-      const length = decoded[1];
-      if (2 + length > decoded.length) {
-        throw new Error(`Invalid payload length: ${length}`);
-      }
-      return new TextDecoder().decode(decoded.slice(2, 2 + length));
+    if (version8 !== 3) {
+      throw new Error(`Unsupported version: ${version8}. Only V3 is supported.`);
     }
-    if (version8 === 2) {
-      const modeByte = decoded[1];
-      const modeField = modeByte >> 6 & 3;
-      const charCount = modeByte & 63;
-      const data = decoded.slice(2);
-      if (modeField === Mode.NUMERIC) {
-        return unpackNumeric(data, charCount);
+    const modeByte = decoded[1];
+    const modeField = modeByte >> 6 & 3;
+    const countField = modeByte & 63;
+    let charCount;
+    let data;
+    if (countField === 63) {
+      if (decoded.length < 3) {
+        throw new Error("Decoded data too short for extended header");
       }
-      if (modeField === Mode.ALPHANUMERIC || modeField === 3) {
-        const text = unpackAlphanumeric(data, charCount);
-        return modeField === 3 ? text.toLowerCase() : text;
-      }
-      if (charCount > data.length) {
-        throw new Error(`Invalid payload length: ${charCount}`);
-      }
-      return new TextDecoder().decode(data.slice(0, charCount));
+      charCount = decoded[2];
+      data = decoded.slice(3);
+    } else {
+      charCount = countField;
+      data = decoded.slice(2);
     }
-    throw new Error(`Unsupported version: ${version8}`);
+    if (modeField === Mode.NUMERIC) {
+      return unpackNumeric(data, charCount);
+    }
+    if (modeField === Mode.ALPHANUMERIC || modeField === 3) {
+      const text = unpackAlphanumeric(data, charCount);
+      return modeField === 3 ? text.toLowerCase() : text;
+    }
+    if (charCount > data.length) {
+      throw new Error(`Invalid payload length: ${charCount}`);
+    }
+    return new TextDecoder().decode(data.slice(0, charCount));
   }
 
   // src/render/svgRenderer.ts
@@ -75561,7 +75726,15 @@ return a / b;`;
     const ringWidth = getRingWidth(rings, size);
     const strokeWidth = ringWidth * STROKE_WIDTH_RATIO;
     const centerRadius = ringWidth * CENTER_RADIUS_RATIO;
-    const { primaryPaths, secondaryPaths } = renderDataRings(bits, rings, segmentsPerRing, cx, cy, size, strokeWidth);
+    const { primaryPaths, secondaryPaths } = renderDataRings(
+      bits,
+      rings,
+      segmentsPerRing,
+      cx,
+      cy,
+      size,
+      strokeWidth
+    );
     const orientationPaths = renderOrientationRing(rings, segmentsPerRing, cx, cy, size, strokeWidth);
     return `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
@@ -75780,6 +75953,67 @@ return a / b;`;
     return gray[iy * width + ix];
   }
 
+  // src/scan/centerRefine.ts
+  function refineCenterFromDot(buf, rings, size, precomputedGray) {
+    const { data, width, height } = buf;
+    const gray = precomputedGray ?? toGrayscale(data, width * height);
+    const expectedCx = width / 2;
+    const expectedCy = height / 2;
+    const ringWidth = getRingWidth(rings, size);
+    const dotRadius = ringWidth * 0.75;
+    const searchRadius = Math.ceil(dotRadius * 2);
+    let innerSum = 0, innerN = 0;
+    let outerSum = 0, outerN = 0;
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > searchRadius) continue;
+        const x2 = Math.round(expectedCx + dx);
+        const y = Math.round(expectedCy + dy);
+        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
+        const val = gray[y * width + x2];
+        if (dist <= dotRadius * 0.8) {
+          innerSum += val;
+          innerN++;
+        } else if (dist >= dotRadius * 1.3) {
+          outerSum += val;
+          outerN++;
+        }
+      }
+    }
+    if (innerN === 0 || outerN === 0) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    const innerAvg = innerSum / innerN;
+    const outerAvg = outerSum / outerN;
+    if (Math.abs(innerAvg - outerAvg) < 30) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    const dotIsDark = innerAvg < outerAvg;
+    const threshold3 = (innerAvg + outerAvg) / 2;
+    let sumX = 0, sumY = 0, weight = 0;
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        if (dx * dx + dy * dy > searchRadius * searchRadius) continue;
+        const x2 = Math.round(expectedCx + dx);
+        const y = Math.round(expectedCy + dy);
+        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
+        const val = gray[y * width + x2];
+        const isDot = dotIsDark ? val < threshold3 : val > threshold3;
+        if (isDot) {
+          const w = Math.abs(val - threshold3);
+          sumX += x2 * w;
+          sumY += y * w;
+          weight += w;
+        }
+      }
+    }
+    if (weight < 1) {
+      return { cx: expectedCx, cy: expectedCy };
+    }
+    return { cx: sumX / weight, cy: sumY / weight };
+  }
+
   // src/scan/detector.ts
   var HOUGH_ANGLES = 12;
   var cosTable = new Float64Array(HOUGH_ANGLES);
@@ -75903,67 +76137,6 @@ return a / b;`;
     const normalizedContrast = Math.min(contrast / 80, 1);
     const overall = normalizedSharpness * 0.6 + normalizedContrast * 0.4;
     return { sharpness, contrast, overall };
-  }
-
-  // src/scan/centerRefine.ts
-  function refineCenterFromDot(buf, rings, size, precomputedGray) {
-    const { data, width, height } = buf;
-    const gray = precomputedGray ?? toGrayscale(data, width * height);
-    const expectedCx = width / 2;
-    const expectedCy = height / 2;
-    const ringWidth = getRingWidth(rings, size);
-    const dotRadius = ringWidth * 0.75;
-    const searchRadius = Math.ceil(dotRadius * 2);
-    let innerSum = 0, innerN = 0;
-    let outerSum = 0, outerN = 0;
-    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > searchRadius) continue;
-        const x2 = Math.round(expectedCx + dx);
-        const y = Math.round(expectedCy + dy);
-        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
-        const val = gray[y * width + x2];
-        if (dist <= dotRadius * 0.8) {
-          innerSum += val;
-          innerN++;
-        } else if (dist >= dotRadius * 1.3) {
-          outerSum += val;
-          outerN++;
-        }
-      }
-    }
-    if (innerN === 0 || outerN === 0) {
-      return { cx: expectedCx, cy: expectedCy };
-    }
-    const innerAvg = innerSum / innerN;
-    const outerAvg = outerSum / outerN;
-    if (Math.abs(innerAvg - outerAvg) < 30) {
-      return { cx: expectedCx, cy: expectedCy };
-    }
-    const dotIsDark = innerAvg < outerAvg;
-    const threshold3 = (innerAvg + outerAvg) / 2;
-    let sumX = 0, sumY = 0, weight = 0;
-    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-        if (dx * dx + dy * dy > searchRadius * searchRadius) continue;
-        const x2 = Math.round(expectedCx + dx);
-        const y = Math.round(expectedCy + dy);
-        if (x2 < 0 || x2 >= width || y < 0 || y >= height) continue;
-        const val = gray[y * width + x2];
-        const isDot = dotIsDark ? val < threshold3 : val > threshold3;
-        if (isDot) {
-          const w = Math.abs(val - threshold3);
-          sumX += x2 * w;
-          sumY += y * w;
-          weight += w;
-        }
-      }
-    }
-    if (weight < 1) {
-      return { cx: expectedCx, cy: expectedCy };
-    }
-    return { cx: sumX / weight, cy: sumY / weight };
   }
 
   // src/scan/orientationAnalyzer.ts
@@ -76228,7 +76401,14 @@ return a / b;`;
           const cosA = Math.cos(angle);
           const sinA = Math.sin(angle);
           for (const sr of [innerRadius, centerRadius, outerRadius]) {
-            const b = getPixelBrightness(data, width, height, cx + sr * cosA, cy + sr * sinA, bgBrightness);
+            const b = getPixelBrightness(
+              data,
+              width,
+              height,
+              cx + sr * cosA,
+              cy + sr * sinA,
+              bgBrightness
+            );
             if (b >= 0) {
               sum5 += b;
               count2++;
@@ -76400,8 +76580,24 @@ return a / b;`;
     const rectified = warped;
     const gray = toGrayscale(rectified.data, rectified.width * rectified.height);
     const center = refineCenterFromDot(rectified, rings, codeSize, gray);
-    const orientation = analyzeOrientation(rectified, rings, codeSize, 360, center.cx, center.cy, segmentsPerRing, gray);
-    const validation = validateCircularCode(rectified, rings, codeSize, CONFIDENCE_THRESHOLD, segmentsPerRing, gray);
+    const orientation = analyzeOrientation(
+      rectified,
+      rings,
+      codeSize,
+      360,
+      center.cx,
+      center.cy,
+      segmentsPerRing,
+      gray
+    );
+    const validation = validateCircularCode(
+      rectified,
+      rings,
+      codeSize,
+      CONFIDENCE_THRESHOLD,
+      segmentsPerRing,
+      gray
+    );
     const frameScoreResult = scoreFrame(
       captured,
       activeDetection.cx,
@@ -76444,7 +76640,7 @@ return a / b;`;
     };
   }
 
-  // example/app.ts
+  // debug/app.ts
   var lastCode = null;
   var lastSvg = "";
   var lastSize = 400;
@@ -76472,13 +76668,17 @@ return a / b;`;
   function generate() {
     const text = textInput.value;
     if (!text) return;
-    const rings = parseInt(optRings.value);
-    const segmentsPerRing = parseInt(optSegments.value);
-    const eccBytes = parseInt(optEcc.value);
+    const ringsVal = optRings.value;
+    const segsVal = optSegments.value;
+    const eccVal = optEcc.value;
     const size = parseInt(optSize.value) || 400;
     lastSize = size;
     try {
-      const code = encode(text, { rings, segmentsPerRing, eccBytes });
+      const opts = {};
+      if (ringsVal !== "auto") opts.rings = parseInt(ringsVal);
+      if (segsVal !== "auto") opts.segmentsPerRing = parseInt(segsVal);
+      if (eccVal !== "auto") opts.eccBytes = parseInt(eccVal);
+      const code = encode(text, opts);
       lastCode = code;
       const primary = inverted ? "#ffffff" : "#000000";
       const secondary = inverted ? "#303030" : "#d0d0d0";
@@ -76488,17 +76688,19 @@ return a / b;`;
       codeOutput.classList.remove("empty");
       codeOutput.style.background = inverted ? "#111" : "#fff";
       downloadRow.style.display = "flex";
-      const decoded = decode(code.bits, eccBytes);
+      const decoded = decode(code.bits, code.eccBytes);
       decodeResult.textContent = decoded;
       decodeResult.className = "decode-result " + (decoded === text ? "success" : "error");
       const totalBits = code.bits.length;
-      const dataBits = totalBits - eccBytes * 8;
-      const gridSlots = getTotalSegments(rings, segmentsPerRing);
+      const dataBits = totalBits - code.eccBytes * 8;
+      const gridSlots = getTotalSegments(code.rings, code.segmentsPerRing);
+      const autoLabel = (v) => v === "auto" ? " \u2726" : "";
       statsEl.innerHTML = [
-        `<div class="stat">Bits: <span>${totalBits}</span></div>`,
+        `<div class="stat">Rings: <span>${code.rings}${autoLabel(ringsVal)}</span></div>`,
+        `<div class="stat">Segs: <span>${code.segmentsPerRing}${autoLabel(segsVal)}</span></div>`,
+        `<div class="stat">Bits: <span>${totalBits}/${gridSlots}</span></div>`,
         `<div class="stat">Data: <span>${dataBits}</span></div>`,
-        `<div class="stat">ECC: <span>${eccBytes * 8}</span></div>`,
-        `<div class="stat">Grid: <span>${gridSlots} slots</span></div>`,
+        `<div class="stat">ECC: <span>${code.eccBytes}B${autoLabel(eccVal)} (corrects ${Math.floor(code.eccBytes / 2)})</span></div>`,
         `<div class="stat">Match: <span>${decoded === text ? "Yes" : "No"}</span></div>`
       ].join("");
     } catch (e) {
@@ -76539,10 +76741,10 @@ return a / b;`;
   var scanImageDebug = document.getElementById("scan-image-debug");
   function scanFromImage() {
     const svgEl = codeOutput.querySelector("svg");
-    if (!svgEl) return;
-    const rings = parseInt(optRings.value);
-    const segmentsPerRing = parseInt(optSegments.value);
-    const eccBytes = parseInt(optEcc.value);
+    if (!svgEl || !lastCode) return;
+    const rings = lastCode.rings;
+    const segmentsPerRing = lastCode.segmentsPerRing;
+    const eccBytes = lastCode.eccBytes;
     const svgString = new XMLSerializer().serializeToString(svgEl);
     const img = new Image();
     const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
@@ -76744,9 +76946,9 @@ return a / b;`;
     }
     lastScanTime = now2;
     frameCount++;
-    const rings = parseInt(optRings.value);
-    const segmentsPerRing = parseInt(optSegments.value);
-    const eccBytes = parseInt(optEcc.value);
+    const rings = lastCode?.rings ?? (parseInt(optRings.value) || 8);
+    const segmentsPerRing = lastCode?.segmentsPerRing ?? (parseInt(optSegments.value) || 48);
+    const eccBytes = lastCode?.eccBytes ?? (parseInt(optEcc.value) || 4);
     const captured = captureFrameToBuffer(scanVideo, 320);
     const result = scanFrame(captured, { rings, segmentsPerRing, eccBytes });
     const overlay = document.getElementById("scan-overlay");

@@ -103,11 +103,23 @@ function getSegmentAngle(segment, segmentsInRing) {
 function isDataRing(ring) {
     return ring > 0;
 }
-/** Returns the number of segments in a ring, scaling with ring radius. */
+/** Returns the number of segments in a ring, scaling with ring radius.
+ *  The outermost data ring is padded so the total across all data rings
+ *  is a multiple of 8, eliminating wasted trailing bits. */
 function getSegmentsForRing(ring, rings, baseSegments) {
-    return Math.max(8, Math.round((baseSegments * (ring + 1)) / rings));
+    const raw = Math.max(8, Math.round((baseSegments * (ring + 1)) / rings));
+    if (ring !== rings - 1)
+        return raw;
+    let innerTotal = 0;
+    for (let r = 0; r < rings - 1; r++) {
+        if (isDataRing(r)) {
+            innerTotal += Math.max(8, Math.round((baseSegments * (r + 1)) / rings));
+        }
+    }
+    const pad = (8 - ((innerTotal + raw) % 8)) % 8;
+    return raw + pad;
 }
-/** Returns the total number of data segments across all data rings. */
+/** Returns the total number of data segments across all data rings (always a multiple of 8). */
 function getTotalSegments(rings, baseSegments) {
     let total = 0;
     for (let r = 0; r < rings; r++) {

@@ -1,8 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createBuffer = exports.captureFrameToBuffer = exports.canvasToBuffer = exports.bufferToCanvas = exports.getOrCreateCanvas = exports.runModelPrediction = exports.parseDetections = exports.MODEL_INPUT_SIZE = exports.loadModelFromFiles = exports.loadModel = exports.isModelLoaded = exports.getLoadedModel = exports.detectWithModel = exports.samplePolarGrid = exports.warpPerspective = exports.solveHomography = exports.estimateCircleCorners = exports.validateCircularCode = exports.scoreFrame = exports.MultiFrameConsensus = exports.analyzeOrientation = exports.scanFromVideo = exports.scanFrame = exports.sampleAndDecode = exports.resolveCorners = exports.rectifyCode = exports.processFrame = exports.flipHorizontal = exports.detectCode = exports.renderCanvas = exports.renderSVG = exports.rsEncode = exports.rsDecode = exports.bytesToBits = exports.bitsToBytes = exports.decode = exports.Mode = exports.detectMode = exports.encode = exports.SCAN_TIMEOUT_MS = exports.DEFAULT_SEGMENTS_PER_RING = exports.DEFAULT_RINGS = exports.DEFAULT_MIN_FRAME_SCORE = exports.DEFAULT_ECC_BYTES = exports.DEFAULT_CORNER_PADDING = exports.DEFAULT_CONSENSUS_SIZE = exports.DEFAULT_CONSENSUS_REQUIRED = exports.DEFAULT_CODE_SIZE = exports.DEFAULT_CAPTURE_SIZE = exports.CONFIDENCE_THRESHOLD = void 0;
-exports.useCircularScanner = exports.toGrayscale = exports.flipBufferHorizontal = void 0;
+exports.loadModel = exports.isModelLoaded = exports.getLoadedModel = exports.detectWithModel = exports.samplePolarGrid = exports.warpPerspective = exports.solveHomography = exports.estimateCircleCorners = exports.validateCircularCode = exports.scoreFrame = exports.MultiFrameConsensus = exports.analyzeOrientation = exports.scanFromVideo = exports.scanFrame = exports.sampleAndDecode = exports.resolveCorners = exports.rectifyCode = exports.processFrame = exports.flipHorizontal = exports.detectCode = exports.renderCanvas = exports.renderSVG = exports.rsEncode = exports.rsDecode = exports.bytesToBits = exports.bitsToBytes = exports.decode = exports.Mode = exports.detectMode = exports.minRingsForBits = exports.computeNeededBits = exports.computeDataBytes = exports.autoSize = exports.encode = exports.SCAN_TIMEOUT_MS = exports.DEFAULT_SEGMENTS_PER_RING = exports.DEFAULT_RINGS = exports.DEFAULT_MIN_FRAME_SCORE = exports.DEFAULT_ECC_BYTES = exports.DEFAULT_CORNER_PADDING = exports.DEFAULT_CONSENSUS_SIZE = exports.DEFAULT_CONSENSUS_REQUIRED = exports.DEFAULT_CODE_SIZE = exports.DEFAULT_CAPTURE_SIZE = exports.CONFIDENCE_THRESHOLD = exports.AUTO_SEGMENT_CANDIDATES = exports.AUTO_MIN_RINGS = exports.AUTO_MIN_ECC = exports.AUTO_MAX_RINGS = exports.AUTO_MAX_ECC = void 0;
+exports.useCircularScanner = exports.toGrayscale = exports.flipBufferHorizontal = exports.createBuffer = exports.captureFrameToBuffer = exports.canvasToBuffer = exports.bufferToCanvas = exports.getOrCreateCanvas = exports.runModelPrediction = exports.parseDetections = exports.MODEL_INPUT_SIZE = exports.loadModelFromFiles = void 0;
 var constants_1 = require("./constants");
+Object.defineProperty(exports, "AUTO_MAX_ECC", { enumerable: true, get: function () { return constants_1.AUTO_MAX_ECC; } });
+Object.defineProperty(exports, "AUTO_MAX_RINGS", { enumerable: true, get: function () { return constants_1.AUTO_MAX_RINGS; } });
+Object.defineProperty(exports, "AUTO_MIN_ECC", { enumerable: true, get: function () { return constants_1.AUTO_MIN_ECC; } });
+Object.defineProperty(exports, "AUTO_MIN_RINGS", { enumerable: true, get: function () { return constants_1.AUTO_MIN_RINGS; } });
+Object.defineProperty(exports, "AUTO_SEGMENT_CANDIDATES", { enumerable: true, get: function () { return constants_1.AUTO_SEGMENT_CANDIDATES; } });
 Object.defineProperty(exports, "CONFIDENCE_THRESHOLD", { enumerable: true, get: function () { return constants_1.CONFIDENCE_THRESHOLD; } });
 Object.defineProperty(exports, "DEFAULT_CAPTURE_SIZE", { enumerable: true, get: function () { return constants_1.DEFAULT_CAPTURE_SIZE; } });
 Object.defineProperty(exports, "DEFAULT_CODE_SIZE", { enumerable: true, get: function () { return constants_1.DEFAULT_CODE_SIZE; } });
@@ -16,6 +21,11 @@ Object.defineProperty(exports, "DEFAULT_SEGMENTS_PER_RING", { enumerable: true, 
 Object.defineProperty(exports, "SCAN_TIMEOUT_MS", { enumerable: true, get: function () { return constants_1.SCAN_TIMEOUT_MS; } });
 var encoder_1 = require("./core/encoder");
 Object.defineProperty(exports, "encode", { enumerable: true, get: function () { return encoder_1.encode; } });
+var autoSize_1 = require("./core/autoSize");
+Object.defineProperty(exports, "autoSize", { enumerable: true, get: function () { return autoSize_1.autoSize; } });
+Object.defineProperty(exports, "computeDataBytes", { enumerable: true, get: function () { return autoSize_1.computeDataBytes; } });
+Object.defineProperty(exports, "computeNeededBits", { enumerable: true, get: function () { return autoSize_1.computeNeededBits; } });
+Object.defineProperty(exports, "minRingsForBits", { enumerable: true, get: function () { return autoSize_1.minRingsForBits; } });
 var modes_1 = require("./core/modes");
 Object.defineProperty(exports, "detectMode", { enumerable: true, get: function () { return modes_1.detectMode; } });
 Object.defineProperty(exports, "Mode", { enumerable: true, get: function () { return modes_1.Mode; } });

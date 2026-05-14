@@ -3,8 +3,7 @@ import { bitsToBytes } from "@/core/bitstream";
 import { Mode, unpackAlphanumeric, unpackNumeric } from "@/core/modes";
 import { rsDecode } from "@/ecc/reedSolomon";
 
-/** Decodes a bit array back into a string using Reed-Solomon error correction.
- *  Supports both v1 (byte-only) and v2 (numeric/alphanumeric/byte) formats. */
+/** Decodes a bit array back into a string using Reed-Solomon error correction. */
 export function decode(bits: number[], eccBytes = DEFAULT_ECC_BYTES): string {
   const bytes = bitsToBytes(bits);
   const decoded = rsDecode(bytes, eccBytes);
@@ -14,34 +13,37 @@ export function decode(bits: number[], eccBytes = DEFAULT_ECC_BYTES): string {
   }
 
   const version = decoded[0];
-
-  if (version === 1) {
-    const length = decoded[1];
-    if (2 + length > decoded.length) {
-      throw new Error(`Invalid payload length: ${length}`);
-    }
-    return new TextDecoder().decode(decoded.slice(2, 2 + length));
+  if (version !== 3) {
+    throw new Error(`Unsupported version: ${version}. Only V3 is supported.`);
   }
 
-  if (version === 2) {
-    const modeByte = decoded[1];
-    const modeField = (modeByte >> 6) & 0x3;
-    const charCount = modeByte & 0x3f;
-    const data = decoded.slice(2);
+  const modeByte = decoded[1];
+  const modeField = (modeByte >> 6) & 0x3;
+  const countField = modeByte & 0x3f;
 
-    if (modeField === Mode.NUMERIC) {
-      return unpackNumeric(data, charCount);
+  let charCount: number;
+  let data: Uint8Array;
+
+  if (countField === 0x3f) {
+    if (decoded.length < 3) {
+      throw new Error("Decoded data too short for extended header");
     }
-    if (modeField === Mode.ALPHANUMERIC || modeField === 3) {
-      const text = unpackAlphanumeric(data, charCount);
-      return modeField === 3 ? text.toLowerCase() : text;
-    }
-    // Mode.BYTE
-    if (charCount > data.length) {
-      throw new Error(`Invalid payload length: ${charCount}`);
-    }
-    return new TextDecoder().decode(data.slice(0, charCount));
+    charCount = decoded[2];
+    data = decoded.slice(3);
+  } else {
+    charCount = countField;
+    data = decoded.slice(2);
   }
 
-  throw new Error(`Unsupported version: ${version}`);
+  if (modeField === Mode.NUMERIC) {
+    return unpackNumeric(data, charCount);
+  }
+  if (modeField === Mode.ALPHANUMERIC || modeField === 3) {
+    const text = unpackAlphanumeric(data, charCount);
+    return modeField === 3 ? text.toLowerCase() : text;
+  }
+  if (charCount > data.length) {
+    throw new Error(`Invalid payload length: ${charCount}`);
+  }
+  return new TextDecoder().decode(data.slice(0, charCount));
 }

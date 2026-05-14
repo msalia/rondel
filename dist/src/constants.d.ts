@@ -20,3 +20,13 @@ export declare const DEFAULT_CONSENSUS_SIZE = 7;
 export declare const DEFAULT_CONSENSUS_REQUIRED = 3;
 /** Video scan timeout in milliseconds. */
 export declare const SCAN_TIMEOUT_MS = 30000;
+/** Auto-sizing: minimum number of rings. */
+export declare const AUTO_MIN_RINGS = 4;
+/** Auto-sizing: maximum number of rings. */
+export declare const AUTO_MAX_RINGS = 8;
+/** Auto-sizing: minimum ECC bytes. */
+export declare const AUTO_MIN_ECC = 2;
+/** Auto-sizing: maximum ECC bytes. */
+export declare const AUTO_MAX_ECC = 8;
+/** Auto-sizing: segment counts to search across. */
+export declare const AUTO_SEGMENT_CANDIDATES: readonly [32, 48];

@@ -1,10 +1,10 @@
-# Circular Code
+# Rondel
 
 A circular barcode format that encodes arbitrary text into concentric ring patterns. Renders as SVG, scans from camera or image using ML detection, perspective correction, and algorithmic orientation recovery. Includes Reed-Solomon error correction over GF(256).
 
-## What Is a Circular Code?
+## What Is a Rondel?
 
-A circular code is a 2D barcode arranged as concentric rings of arc segments around a central dot. Each arc segment represents one bit — dark (primary color) for 1, light (secondary color) for 0. The code is read by identifying the center, determining the orientation, and sampling each segment's brightness.
+A rondel is a 2D barcode arranged as concentric rings of arc segments around a central dot. Each arc segment represents one bit — dark (primary color) for 1, light (secondary color) for 0. The code is read by identifying the center, determining the orientation, and sampling each segment's brightness.
 
 ### Anatomy
 
@@ -35,7 +35,7 @@ A circular code is a 2D barcode arranged as concentric rings of arc segments aro
 
 **Ring 0 (spacer)** — the innermost ring carries no data. It provides visual separation between the center dot and the first data ring.
 
-**Data rings 1..N** — each ring is divided into arc segments. The number of segments per ring scales with circumference: inner rings have fewer segments, outer rings have more. This keeps arc lengths approximately constant across all rings, preventing inner-ring segments from becoming too small to scan reliably.
+**Data rings 1..N** — each ring is divided into arc segments. The number of segments per ring scales with circumference: inner rings have fewer segments, outer rings have more. This keeps arc lengths approximately constant across all rings, preventing inner-ring segments from becoming too small to scan reliably. The outermost data ring is padded so the total segment count is always a multiple of 8, eliminating wasted trailing bits.
 
 **Orientation ring** — sits outside the outermost data ring. Contains a fixed pattern of asymmetric arcs that allows the scanner to determine:
 - **Rotation angle** (0-360 degrees, ~1 degree resolution)
@@ -63,8 +63,6 @@ activeArc    = segmentAngle * (1 - GAP_FRACTION)     // GAP_FRACTION = 0.3
 gap          = segmentAngle * GAP_FRACTION
 ```
 
-The gap provides visual separation between adjacent segments and prevents anti-aliasing bleed from making adjacent segments indistinguishable.
-
 ### Orientation Ring
 
 The orientation ring sits at radius `(rings + 1) * ringWidth` and contains:
@@ -87,15 +85,67 @@ Data integrity uses Reed-Solomon codes over GF(256) with primitive polynomial `x
 3. **Chien search** — find roots of `σ(x)` by evaluating at all 255 non-zero field elements; roots indicate error positions
 4. **Forney algorithm** — compute error magnitudes from the error evaluator polynomial `Ω(x)` and the formal derivative `σ'(x)`
 
-### Data Format
+### Data Format (V3)
 
-The encoder wraps input text in a binary envelope:
+The encoder wraps input text in a binary envelope with automatic mode selection:
 
 ```
-[version: 1 byte] [length: 1 byte] [UTF-8 data: N bytes] [RS parity: eccBytes]
+[version: 1 byte = 0x03] [mode+count: 1 byte] [extended count: 0-1 bytes] [packed data: N bytes] [RS parity: eccBytes]
 ```
 
-This byte sequence is converted to a bit stream (MSB first) and mapped to ring segments starting from ring 1 segment 0, proceeding through all segments of each ring before moving to the next ring. Unused grid segments beyond the encoded bits are rendered as secondary-color arcs.
+**Header format:**
+- Byte 0: version (always 3)
+- Byte 1: `(modeField << 6) | countLow`
+  - `countLow <= 62`: count is `countLow`, header is 2 bytes
+  - `countLow == 63` (0x3F): count is in byte 2 (0-255), header is 3 bytes
+
+**Encoding modes** — automatically selected for optimal density:
+
+| Mode | Field | Packing | Bits/char |
+|------|-------|---------|-----------|
+| Numeric | 0 | 3 digits → 10 bits | ~3.33 |
+| Alphanumeric | 1 | 2 chars → 11 bits (A-Z, 0-9, space, `$%*+-./:`) | ~5.5 |
+| Byte | 2 | raw UTF-8 | 8.0 |
+| Alphanumeric + lowercase | 3 | same as alphanumeric, lowercased on decode | ~5.5 |
+
+The byte sequence is converted to a bit stream (MSB first) and mapped to ring segments starting from ring 1 segment 0.
+
+### Auto-Sizing
+
+When `encode()` is called without explicit `rings`, `segmentsPerRing`, or `eccBytes`, the encoder auto-selects the optimal configuration:
+
+1. Compute packed data size (header + mode-packed payload)
+2. Search across segment candidates to find the fewest rings that fit
+3. Fill remaining grid capacity with ECC bytes for maximum error correction
+
+**Default auto-sizing ranges** (configurable in `constants.ts`):
+
+| Parameter | Range | Default |
+|-----------|-------|---------|
+| `AUTO_MIN_RINGS` / `AUTO_MAX_RINGS` | 4-8 | — |
+| `AUTO_SEGMENT_CANDIDATES` | [32, 48] | — |
+| `AUTO_MIN_ECC` / `AUTO_MAX_ECC` | 2-8 bytes | — |
+
+**Auto-size examples:**
+
+| Input | Rings | Segments | ECC | Capacity |
+|-------|-------|----------|-----|----------|
+| `"Hi"` | 4 | 48 | 8 | 112 bits |
+| `"hello"` | 4 | 48 | 8 | 112 bits |
+| `"1234567890"` | 4 | 48 | 7 | 112 bits |
+| `"https://example.com"` | 6 | 48 | 4 | 160 bits |
+
+### Capacity Table
+
+Grid capacity in characters by configuration (byte mode / alphanumeric mode):
+
+| Rings | Segs=32 | Segs=48 |
+|-------|---------|---------|
+| 4 | 5 / 6 (ecc=2) | 10 / 14 (ecc=2) |
+| 5 | 8 / 10 | 13 / 18 |
+| 6 | 10 / 14 | 16 / 22 |
+| 7 | 12 / 16 | 20 / 28 |
+| 8 | 14 / 20 | 23 / 32 |
 
 ## Rendering
 
@@ -103,15 +153,10 @@ This byte sequence is converted to a bit stream (MSB first) and mapped to ring s
 
 `renderSVG(code, options)` produces an SVG string with three layers:
 
-1. **Secondary arcs** (gray by default) — fill the gaps between primary arcs, providing visual continuity. A `SECONDARY_SEPARATION` of 1 segment is left between primary and secondary arcs.
-
-2. **Primary arcs** (black by default) — consecutive 1-bits are merged into single long arcs with `stroke-linecap="round"`. This reduces SVG path count and produces cleaner visuals.
-
-3. **Orientation ring arcs** — the timing pattern and three asymmetric arcs, drawn with the primary color.
-
+1. **Secondary arcs** — fill the gaps between primary arcs. A `SECONDARY_SEPARATION` of 1 segment is left between primary and secondary arcs.
+2. **Primary arcs** — consecutive 1-bits are merged into single long arcs with `stroke-linecap="round"`.
+3. **Orientation ring arcs** — the timing pattern and three asymmetric arcs.
 4. **Center dot** — filled circle at the center.
-
-The stroke color is set on the parent `<g>` element, not on individual paths. The SVG has no background fill — transparency allows embedding on any background. During scanning, transparent pixels are composited against the expected background color.
 
 **Options:**
 - `size` — SVG dimensions in pixels (default 300)
@@ -120,87 +165,26 @@ The stroke color is set on the parent `<g>` element, not on individual paths. Th
 
 ### Canvas Renderer
 
-`renderCanvas(code, size)` generates an SVG string via `renderSVG`, loads it as an image blob, and draws it to an HTML canvas. This delegates all layout logic to the SVG renderer for consistency.
+`renderCanvas(code, size)` generates an SVG string via `renderSVG`, loads it as an image blob, and draws it to an HTML canvas.
 
 ## Scanning Pipeline
 
-The scanning pipeline converts a camera frame (or rendered image) back to the encoded text. It runs in several stages:
+The scanning pipeline converts a camera frame (or rendered image) back to the encoded text:
 
-### 1. Detection
-
-**ML detection** (primary): A YOLOv8n-Pose model predicts a bounding box and 4 corner keypoints for each detected code. The corner keypoints define the perspective-warped quadrilateral needed for accurate dewarping.
-
-**Hough circle detection** (fallback): When the ML model is not loaded, a classical Hough circle transform finds circular candidates. Corner positions are estimated from the circle geometry.
-
-### 2. Perspective Correction (Warp)
-
-A 4-point homography maps the detected quadrilateral to a square output image (default 300x300). The homography is solved from 4 source-destination point pairs using Gaussian elimination. Pixel values are bilinearly interpolated for smooth output.
-
-```
-Captured frame (arbitrary perspective)
-    ↓ solveHomography(dstCorners, srcCorners)
-    ↓ warpPerspective(source, corners, outputSize)
-Rectified square image (300x300)
-```
-
-### 3. Center Refinement
-
-`refineCenterFromDot` locates the center dot's centroid in the rectified image. It:
-1. Samples pixels in the inner region (within `dotRadius * 0.8`) and outer annulus (beyond `dotRadius * 1.3`)
-2. Determines if the dot is darker or lighter than surroundings
-3. Computes a weighted centroid of all dot-like pixels within `dotRadius * 2`
-
-The search radius is kept tight to avoid contamination from nearby data ring arcs.
-
-### 4. Orientation Analysis
-
-`analyzeOrientation` samples 360 brightness values around the orientation ring radius, thresholds them into dark/light, and cross-correlates against the expected arc pattern.
-
-The correlation tests four hypotheses simultaneously:
-- Normal orientation at each offset
-- Reflected (mirror) orientation at each offset
-- Normal inverted (light-on-dark) at each offset
-- Reflected inverted at each offset
-
-The hypothesis with the highest correlation score wins. Arc contrast (mean gap brightness minus mean arc brightness) disambiguates normal from inverted polarity.
-
-### 5. Validation
-
-`validateCircularCode` checks three structural features:
-- **Center dot** — brightness difference between center region and outer background > 30
-- **Ring contrast** — radial rays show >= 2 brightness transitions in >= 40% of sampled angles
-- **Segment pattern** — rings show alternating dark/light runs (>= 2 each) in >= 40% of data rings
-
-Each check contributes to a weighted score (0.35 + 0.35 + 0.3). The code is considered valid if the score >= 0.5.
-
-### 6. Polar Grid Sampling
-
-`samplePolarGrid` extracts bit values from the rectified image:
-
-1. For each data ring, compute the center radius using `getExactRingRadius`
-2. For each segment in the ring, sample 9 points: 3 angular offsets × 3 radial offsets
-3. Average the brightness across all sample points for that segment
-4. Compute a per-ring adaptive threshold using the largest-gap method on sorted brightness values
-5. Classify each segment as dark (below threshold) or light (above)
-6. Apply the inverted flag: `bit = (dark !== inverted) ? 1 : 0`
-
-**Alpha handling:** Transparent pixels (alpha = 0) are composited against the expected background brightness — white (255) for normal codes, black (0) for inverted codes. Semi-transparent pixels are alpha-blended against the background. This handles SVG regions where no arc is drawn (the `SECONDARY_SEPARATION` gaps).
-
-**Threshold algorithm:** Sort all brightness values for the ring. Find the largest gap between consecutive sorted values. If the gap exceeds 30, place the threshold at its midpoint. Otherwise fall back to 128. This correctly separates primary arcs from secondary/background regardless of absolute brightness, supporting colored codes (e.g., dark blue on cream, orange on white).
-
-### 7. Decode
-
-The sampled bits are grouped into bytes (MSB first) and passed through the Reed-Solomon decoder. If syndromes are all zero, the data is error-free. Otherwise, Berlekamp-Massey + Chien search + Forney corrects up to `floor(eccBytes / 2)` byte errors. The header (version + length) is validated, and the UTF-8 payload is extracted.
-
-### 8. Multi-Frame Consensus
-
-For live video scanning, `MultiFrameConsensus` accumulates decoded results across frames with weighted majority voting. A result is emitted when `consensusRequired` frames agree on the same decoded text. Frame quality scoring (Laplacian sharpness + contrast) prioritizes sharp, high-contrast frames.
+1. **Detection** — ML (YOLOv8n-Pose with 4 corner keypoints) or Hough circle fallback
+2. **Perspective correction** — 4-point homography to a 300x300 square
+3. **Center refinement** — sub-pixel centroid from the center dot
+4. **Orientation analysis** — rotation, reflection, polarity from the asymmetric ring
+5. **Validation** — center dot, ring contrast, and segment pattern checks
+6. **Polar grid sampling** — 9-point sampling per segment with adaptive threshold
+7. **Decode** — Reed-Solomon error correction and payload extraction
+8. **Multi-frame consensus** — weighted majority voting across frames for camera scanning
 
 ## Project Structure
 
 ```
 src/
-  core/           Encoder, decoder, bitstream, layout math
+  core/           Encoder, decoder, bitstream, layout math, auto-sizing
   ecc/            GF(256) arithmetic and Reed-Solomon codec
   render/         SVG renderer and Canvas renderer
   scan/           Detection, orientation, sampling, perspective, consensus, validation
@@ -208,10 +192,11 @@ src/
   react/          useCircularScanner hook
   utils/          ImageBuffer ops, canvas conversion, grayscale, math
   types.ts        Shared type definitions
+  constants.ts    All configurable defaults including auto-sizing ranges
   index.ts        Public API exports
 
-tests/            607 tests across 21 test files
-example/          Browser demo app with debug pipeline view
+tests/            773 tests across 24 test files
+debug/            Browser debug app with pipeline visualization
 models/           Trained TF.js detection model
 training/         YOLOv8-Pose training scripts (Python)
 scripts/          Dataset generation, build tooling
@@ -227,39 +212,61 @@ npm test
 
 ## Usage
 
-### Encode and Render
+### Encode and Render (Auto-Sized)
 
 ```typescript
-import { encode, renderSVG } from "circular-code";
+import { encode, renderSVG } from "@msalia/rondel";
 
-const code = encode("https://example.com", {
-  rings: 5,
-  segmentsPerRing: 48,
-  eccBytes: 16,
-});
+// Auto-selects rings, segments, and ECC for optimal fit
+const code = encode("https://example.com");
 
 const svg = renderSVG(code, {
   size: 400,
-  primary: "#1a237e",    // dark blue arcs
-  secondary: "#c5cae9",  // light blue background arcs
+  primary: "#1a237e",
+  secondary: "#c5cae9",
 });
 
 document.getElementById("container").innerHTML = svg;
 ```
 
+### Encode with Explicit Options
+
+```typescript
+const code = encode("https://example.com", {
+  rings: 6,
+  segmentsPerRing: 48,
+  eccBytes: 4,
+});
+```
+
 ### Decode from Bits
 
 ```typescript
-import { decode } from "circular-code";
-const text = decode(bits, 16);
+import { decode } from "@msalia/rondel";
+
+// eccBytes must match what the encoder used
+const text = decode(code.bits, code.eccBytes);
+```
+
+### Auto-Size Without Encoding
+
+```typescript
+import { autoSize } from "@msalia/rondel";
+
+const result = autoSize("https://example.com");
+// { rings: 6, segmentsPerRing: 48, eccBytes: 4, capacityBits: 160, usedBits: 160 }
 ```
 
 ### Scan a Single Frame
 
 ```typescript
-import { scanFrame } from "circular-code";
+import { scanFrame } from "@msalia/rondel";
 
-const result = scanFrame(videoElement);
+const result = scanFrame(imageBuffer, {
+  rings: 6,
+  segmentsPerRing: 48,
+  eccBytes: 4,
+});
 if (result.decoded) {
   console.log(result.decoded);
 }
@@ -268,7 +275,7 @@ if (result.decoded) {
 ### Scan from Video
 
 ```typescript
-import { scanFromVideo } from "circular-code";
+import { scanFromVideo } from "@msalia/rondel";
 
 const result = await scanFromVideo(video, {
   modelUrl: "/models/circular_code/model.json",
@@ -279,7 +286,7 @@ const result = await scanFromVideo(video, {
 ### React Hook
 
 ```tsx
-import { useCircularScanner } from "circular-code";
+import { useCircularScanner } from "@msalia/rondel";
 
 function Scanner() {
   const { videoRef, result, scanning } = useCircularScanner({
@@ -297,7 +304,7 @@ function Scanner() {
 
 ## Training the ML Detector
 
-The detector uses a YOLOv8n-Pose model that predicts a bounding box plus 4 corner keypoints per detected code. The keypoints define the perspective-warped quadrilateral for direct homography dewarping. Rotation and polarity are handled algorithmically after rectification.
+The detector uses a YOLOv8n-Pose model that predicts a bounding box plus 4 corner keypoints per detected code.
 
 ### Prerequisites
 
@@ -316,49 +323,19 @@ npm run build
 npm run generate-dataset
 ```
 
-Produces 12,000 images (8,000 positive + 4,000 negative) with an 85/15 train/val split. Positive samples use the SVG renderer with:
+Produces 12,000 images (8,000 positive + 4,000 negative) with an 85/15 train/val split. Positive samples span the full auto-sizing range:
 
-- Randomly generated text (URLs, phrases, alphanumeric tokens, numbers)
-- Varied ring/segment configs (3-6 rings, 32/48/64 segments)
-- Full 3D perspective transforms (pitch, yaw, roll with focal-length projection)
-- Dual-color rendering with configurable primary/secondary colors
-- Noise, lighting gradients, blur, and background clutter
-- ~35% inverted polarity (light codes on dark backgrounds)
-
-Hard negative samples include concentric circles, bullseyes, spirals, clock faces, dashed rings, QR-like grids, and center-dot patterns.
-
-Output structure:
-
-```
-dataset/
-  images/train/    Training images (320x320 PNG)
-  images/val/      Validation images
-  labels/train/    YOLO-Pose labels (class cx cy w h + 4 keypoints)
-  labels/val/      Validation labels
-  data.yaml        YOLO dataset config with kpt_shape: [4, 3]
-```
+- Ring counts from `AUTO_MIN_RINGS` to `AUTO_MAX_RINGS` (default 4-8)
+- Segment counts from `AUTO_SEGMENT_CANDIDATES` (default [32, 48])
+- ECC bytes from `AUTO_MIN_ECC` to `AUTO_MAX_ECC` (default 2-8)
+- Full 3D perspective transforms (pitch, yaw, roll)
+- Varied colors, noise, lighting gradients, blur, and background clutter
+- ~35% inverted polarity
 
 ### Step 2: Train
 
 ```bash
 npm run train
-```
-
-This sets up the Python environment, trains a YOLOv8n-pose model, and exports the best checkpoint to TF.js format.
-
-Training options:
-
-```bash
-npm run train -- --epochs 40 --batch-size 32
-npm run train -- --resume runs/pose/circular_code/weights/best.pt
-npm run train -- --base-model yolov8s-pose.pt  # larger backbone
-```
-
-To re-export without retraining:
-
-```bash
-npm run export-model
-npm run export-model -- --checkpoint path/to/best.pt
 ```
 
 ### Step 3: Verify
@@ -367,62 +344,50 @@ npm run export-model -- --checkpoint path/to/best.pt
 npx vitest run tests/model.test.ts
 ```
 
-Loads the TF.js model, runs inference on sampled images, and checks classification accuracy (>= 80%) and bounding box quality.
-
-### End-to-End
-
-```bash
-npm install && npm run build && npm test
-npm run generate-dataset
-npm run train -- --epochs 40
-npx vitest run tests/model.test.ts
-npm run example  # browser demo
-```
-
 ## Performance
 
-Benchmarks measured on Apple M-series, Node.js, single-threaded. Run with `npx vitest run tests/benchmark.test.ts`. Each benchmark has a p95 budget that fails CI if exceeded.
+Benchmarks measured on Apple M-series, Node.js, single-threaded. Run with `npx vitest run tests/benchmark.test.ts`.
 
 ### Encoding Pipeline
 
 | Operation | p50 | p95 | ops/s |
 |-----------|-----|-----|-------|
-| `encode` (string → bits) | 0.01ms | 0.02ms | 85,000+ |
-| `rsEncode` (payload → codeword) | <0.01ms | 0.01ms | 270,000+ |
-| `rsDecode` (no errors) | 0.01ms | 0.01ms | 180,000+ |
-| `rsDecode` (2 byte errors) | 0.03ms | 0.07ms | 38,000+ |
-| `decode` (bits → string) | 0.01ms | 0.01ms | 116,000+ |
-| `bytesToBits` / `bitsToBytes` | <0.01ms | <0.01ms | 350,000+ |
+| `encode` (string → bits) | 0.01ms | 0.02ms | 118,000+ |
+| `rsEncode` (payload → codeword) | <0.01ms | <0.01ms | 452,000+ |
+| `rsDecode` (no errors) | <0.01ms | <0.01ms | 400,000+ |
+| `rsDecode` (2 byte errors) | 0.02ms | 0.06ms | 41,000+ |
+| `decode` (bits → string) | 0.01ms | 0.01ms | 118,000+ |
+| `bytesToBits` / `bitsToBytes` | <0.01ms | <0.01ms | 347,000+ |
 
 ### Rendering
 
 | Operation | p50 | p95 | ops/s |
 |-----------|-----|-----|-------|
-| `renderSVG` (300px) | 0.03ms | 0.04ms | 39,000+ |
-| `renderSVG` (600px) | 0.02ms | 0.03ms | 46,000+ |
+| `renderSVG` (300px) | 0.02ms | 0.03ms | 50,000+ |
+| `renderSVG` (600px) | 0.02ms | 0.02ms | 57,000+ |
 
-### Scan Pipeline Components
+### Scan Pipeline
 
 | Operation | p50 | p95 | ops/s |
 |-----------|-----|-----|-------|
-| `toGrayscale` (300x300) | 0.25ms | 0.27ms | 4,000+ |
-| `solveHomography` | 0.02ms | 0.02ms | 59,000+ |
-| `warpPerspective` (640→300) | 1.9ms | 2.1ms | 530+ |
-| `refineCenterFromDot` | 0.27ms | 0.28ms | 3,700+ |
-| `analyzeOrientation` | 0.86ms | 0.97ms | 1,160+ |
-| `validateCircularCode` | 0.27ms | 0.29ms | 3,700+ |
-| `scoreFrame` | 0.52ms | 0.64ms | 1,900+ |
-| `samplePolarGrid` | 0.08ms | 0.16ms | 13,000+ |
-| `detectCircle` (Hough, 320px) | 6.6ms | 10.1ms | 150+ |
+| `toGrayscale` (300x300) | 0.24ms | 0.26ms | 4,100+ |
+| `solveHomography` | 0.02ms | 0.02ms | 62,000+ |
+| `warpPerspective` (→300) | 1.73ms | 1.94ms | 577+ |
+| `refineCenterFromDot` | 0.27ms | 0.30ms | 3,700+ |
+| `analyzeOrientation` | 0.84ms | 0.94ms | 1,187+ |
+| `validateCircularCode` | 0.26ms | 0.30ms | 3,800+ |
+| `scoreFrame` | 0.51ms | 0.64ms | 1,968+ |
+| `samplePolarGrid` | 0.07ms | 0.16ms | 13,400+ |
+| `detectCircle` (Hough, 320px) | 6.41ms | 6.65ms | 156+ |
 
 ### End-to-End
 
 | Operation | p50 | p95 | ops/s |
 |-----------|-----|-----|-------|
-| `scanFrame` (known detection) | 3.5ms | 4.4ms | 287 |
-| Full roundtrip (encode→render→rasterize→scan) | 5.5ms | 7.6ms | 181 |
+| `scanFrame` (known detection) | 3.4ms | 4.4ms | ~297 |
+| Full roundtrip (encode→render→rasterize→scan) | 3.9ms | 5.0ms | ~259 |
 
-The scan pipeline bottleneck is `warpPerspective` (bilinear interpolation over 90K pixels). With known detection (skipping Hough), the full decode runs at ~280 fps — well above the 30 fps camera rate.
+The scan pipeline bottleneck is `warpPerspective` (bilinear interpolation over 90K pixels). With known detection (skipping Hough), the full decode runs at ~297 fps — well above the 30 fps camera rate.
 
 ## API Reference
 
@@ -430,8 +395,12 @@ The scan pipeline bottleneck is `warpPerspective` (bilinear interpolation over 9
 
 | Function | Description |
 |----------|-------------|
-| `encode(input, opts?)` | Encode text to `EncodedCode` with bit pattern and layout |
+| `encode(input, opts?)` | Encode text to `EncodedCode`. Auto-sizes when opts are omitted. |
 | `decode(bits, eccBytes?)` | Decode bit array back to text via RS error correction |
+| `autoSize(input, opts?)` | Compute optimal (rings, segments, eccBytes) without encoding |
+| `computeDataBytes(input)` | Compute packed data size in bytes (header + payload, no ECC) |
+| `computeNeededBits(input, ecc)` | Compute total bits needed (data + ECC) |
+| `minRingsForBits(bits, segs)` | Find minimum rings for a given bit count and segment count |
 | `rsEncode(data, eccBytes?)` | Raw Reed-Solomon encode |
 | `rsDecode(data, eccBytes?)` | Raw Reed-Solomon decode with error correction |
 
@@ -451,35 +420,46 @@ The scan pipeline bottleneck is `warpPerspective` (bilinear interpolation over 9
 | `processFrame(video, opts?)` | Process single frame, return result if decoded |
 | `rectifyCode(frame, detection, rings, size?)` | Warp + orient + validate |
 | `detectCode(buf)` | ML detection with Hough fallback |
-| `analyzeOrientation(buf, rings, size)` | Rotation, reflection, polarity from orientation ring |
+| `analyzeOrientation(buf, rings, size)` | Rotation, reflection, polarity |
 | `samplePolarGrid(frame, cx, cy, ...)` | Extract bits from rectified image |
 | `loadModel(path?)` | Load TF.js detection model |
 
 ### Key Types
 
 ```typescript
-type EncodedCode = { bits: number[]; rings: number; segmentsPerRing: number };
-
-type DetectionResult = {
-  cx: number; cy: number; r: number;
-  corners?: Point[];  // 4 keypoints for homography
-  confidence: number;
-};
-
-type OrientationAnalysis = {
-  angle: number;       // radians
-  reflected: boolean;
-  inverted: boolean;
-  confidence: number;
-};
-
-type ScanFrameResult = {
-  detected: boolean;
-  decoded: string | null;
-  error: string | null;
-  detection: DetectionResult;
-  orientation: OrientationAnalysis;
+type EncodedCode = {
   bits: number[];
-  validation: ValidationResult;
+  rings: number;
+  segmentsPerRing: number;
+  eccBytes: number;
+};
+
+type AutoSizeResult = {
+  rings: number;
+  segmentsPerRing: number;
+  eccBytes: number;
+  capacityBits: number;
+  usedBits: number;
+};
+
+type CircularCodeOptions = {
+  rings?: number;          // omit for auto-sizing
+  segmentsPerRing?: number; // omit for auto-sizing
+  eccBytes?: number;       // omit for auto-sizing
 };
 ```
+
+### Constants
+
+All configurable in `src/constants.ts`:
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `AUTO_MIN_RINGS` | 4 | Auto-sizing minimum rings |
+| `AUTO_MAX_RINGS` | 8 | Auto-sizing maximum rings |
+| `AUTO_MIN_ECC` | 2 | Auto-sizing minimum ECC bytes |
+| `AUTO_MAX_ECC` | 8 | Auto-sizing maximum ECC bytes |
+| `AUTO_SEGMENT_CANDIDATES` | [32, 48] | Auto-sizing segment options |
+| `DEFAULT_RINGS` | 5 | Default when rings is explicit but unset |
+| `DEFAULT_SEGMENTS_PER_RING` | 48 | Default when segments is explicit but unset |
+| `DEFAULT_ECC_BYTES` | 4 | Default when ECC is explicit but unset |

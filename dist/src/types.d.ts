@@ -9,6 +9,7 @@ export type EncodedCode = {
     bits: number[];
     rings: number;
     segmentsPerRing: number;
+    eccBytes: number;
 };
 /** A 2D point with x and y coordinates. */
 export type Point = {
